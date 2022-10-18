@@ -523,7 +523,7 @@ is_number(){
     esac
 }
 
-
+###
 info_validate_num(){
     local VAR=$1
     local NUM=$2
@@ -594,7 +594,7 @@ info_validate(){
     
      
     if (( $ERRORS )); then
-        error $LINENO "$ERRORS Errors found in validating data. Recomend running '$SCRIPTNAME $PARTITION fix'."
+        error $LINENO "$ERRORS Errors found in validating data. Recommend running '$SCRIPTNAME $PARTITION fix'."
         return 1
     else
         echo_green info_validate OK
@@ -1211,7 +1211,7 @@ media_volume_verify() {
         return 1
     fi
     
-    run_command "sudo fsck -V -M $VOLUME?"
+    run_command "sudo fsck -V -M -n $VOLUME"
 }
 
 media_volume_repair() {
@@ -1222,10 +1222,10 @@ media_volume_repair() {
         return 1
     fi
     
-    run_command "sudo fsck -V -M $VOLUME? -y"
+    run_command "sudo fsck -V -M -y $VOLUME"
     
     
-    # e2fsck -f -y -v -C O '/dev/sda2'
+    # e2fsck -f -y -v -C 0 '/dev/sda2'
 }
 
 
@@ -1237,8 +1237,16 @@ media_disk_verify() {
         error $LINENO "Disk $DISK does not exist."
         return 1
     fi
+        
+    PARTITION_COUNT=$(media_partition_count $TARGET)
     
-    run_command "sudo fsck -M -V $DISK"
+    echo "Checking $PARTITION_COUNT Partitions..."
+    for ((PART=1 ; PART<=$PARTITION_COUNT; PART++)) ; do
+       run_command "sudo fsck -M -V $DISK$PART" $LINENO  2>/dev/null
+    done   
+    
+    run_command "sudo badblocks -s -v $DISK"
+    
 }
 
 
@@ -1249,10 +1257,16 @@ media_disk_repair() {
         error $LINENO "Volume $DISK does not exist."
         return 1
     fi
-    
-    run_command "sudo fsck -M -V -y $DISK"
-}
 
+    PARTITION_COUNT=$(media_partition_count $TARGET)
+    
+    echo "repairing $PARTITION_COUNT Partitions..."
+    for ((PART=1 ; PART<=$PARTITION_COUNT; PART++)) ; do
+       run_command "sudo fsck -M -V -y $DISK$PART" $LINENO  2>/dev/null
+    done  
+
+    run_command "sudo badblocks -s -v $DISK"
+}
 
 
 media_filesystem_check() {
@@ -1496,8 +1510,14 @@ echo "FS.................='$FS'"
     fi
 
 
+# sleep 2
+#run_command "sudo parted $DEVICE resizepart $PARTNUM $END_BYTE'b' -s" $LINENO
+run_command "sudo parted $DEVICE unit B resizepart $PARTNUM $END_BYTE" $LINENO
 
-run_command "sudo parted $DEVICE resizepart $PARTNUM $END_BYTE'b' -s" $LINENO
+#echo running "yes | sudo parted $DEVICE unit B resizepart $PARTNUM $END_BYTE"  $LINENO
+
+#yes | sudo parted $DEVICE unit B resizepart $PARTNUM $END_BYTE
+
 return
 
    
@@ -2810,6 +2830,44 @@ media_rename() {
 }
 
 
+media_partition_add(){
+    local MEDIA=$1
+    local FILESYSTEM=$2    # fat32, exfat, ntfs, ext3, ext4, free, swap
+    local SIZE=$3
+    local SIZE_BYTES=$(bytes $SIZE -b)
+    
+    PARTED_OUTPUT=$(sudo parted -ms $MEDIA unit B print)
+    MEDIA_LAST_PARTITION_BYTE=$(echo "$PARTED_OUTPUT" | tail -1 | cut -d: -f4 | tr -cd '[[:digit:]]' )
+    
+    NEW_PART_START=$(( $MEDIA_LAST_PARTITION_BYTE+1024 ))
+    NEW_PART_END=$(( $NEW_PART_START+$SIZE_BYTES ))
+    
+    echo $MEDIA_LAST_PARTITION_BYTE
+    echo $SIZE_BYTES
+    echo $NEW_PART_START
+    echo $NEW_PART_END
+    
+    
+    
+    #exit
+    
+    
+    # add partiton with parted?  or maybe fdisk
+    
+         #        mkpart [part-type name fs-type] start end
+         #         Create a new partition. part-type may be specified only with msdos and dvh partition tables, it should be one of  "primary",
+         #            "logical",  or  "extended".   name  is  required  for  GPT  partition tables and fs-type is optional.  fs-type can be one of
+         #            "btrfs", "ext2", "ext3", "ext4", "fat16", "fat32", "hfs", "hfs+", "linux-swap", "ntfs", "reiserfs", "udf", or "xfs".
+
+echo     mkpart primary $FILESYSTEM $NEW_PART_START $NEW_PART_END
+    
+    # create filesystem in the partition
+    
+    
+    
+}
+
+
 resize(){
     # need ntfsresize and fatresize
     # sudo apt install fatresize
@@ -2909,6 +2967,21 @@ resize(){
         echo "Can't resize exfat filesystems.  Use MS Windows"
         return 1
     fi
+    
+    
+    
+    
+    # make sure size is OK
+    if [ $NEW_SIZE -lt $MIN_SIZE ]; then
+        echo_red "ERROR: NewSize can't be smaller than $MIN_SIZE"
+        return 1
+    fi
+    if [ $NEW_SIZE -gt $MAX_SIZE ]; then
+        echo_red "ERROR: NewSize can't be bigger than $MAX_SIZE"
+        return 1
+    fi    
+    
+    
     
     echo "MODE: $MODE"
 
@@ -3173,7 +3246,7 @@ case $CMD in
     randomDisk)         ;;
     
     partitionDisk)      ;;
-    addPartition)       ;;
+    addPartition)       media_partition_add $2 $3 $4;;
     resizeVolume)       
         media_check_target $TARGET part
         if (( $? )); then
