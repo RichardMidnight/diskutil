@@ -2836,10 +2836,14 @@ media_partition_add(){
     local SIZE=$3
     local SIZE_BYTES=$(bytes $SIZE -b)
     
-    PARTED_OUTPUT=$(sudo parted -ms $MEDIA unit B print)
-    MEDIA_LAST_PARTITION_BYTE=$(echo "$PARTED_OUTPUT" | tail -1 | cut -d: -f4 | tr -cd '[[:digit:]]' )
+    MEDIA_SIZE=$(sudo blockdev --getsize64 $MEDIA)
+    echo Media Size=$MEDIA_SIZE
     
-    NEW_PART_START=$(( $MEDIA_LAST_PARTITION_BYTE+1024 ))
+    PARTED_OUTPUT=$(sudo parted -ms $MEDIA unit B print)
+    MEDIA_LAST_PARTITION_NUMBER=$(echo "$PARTED_OUTPUT" | tail -1 | cut -d: -f1 | tr -cd '[[:digit:]]' )
+    MEDIA_LAST_PARTITION_BYTE=$(echo "$PARTED_OUTPUT" | tail -1 | cut -d: -f3 | tr -cd '[[:digit:]]' )
+    
+    NEW_PART_START=$(( $MEDIA_LAST_PARTITION_BYTE ))
     NEW_PART_END=$(( $NEW_PART_START+$SIZE_BYTES ))
     
     echo $MEDIA_LAST_PARTITION_BYTE
@@ -2847,6 +2851,11 @@ media_partition_add(){
     echo $NEW_PART_START
     echo $NEW_PART_END
     
+    
+    if [ $NEW_PART_END -gt $MEDIA_SIZE ]; then
+        echo Error: Not enought space available... only $(( $MEDIA_SIZE - $NEW_PART_START )) available.
+        return 1
+    fi
     
     
     #exit
@@ -2859,10 +2868,13 @@ media_partition_add(){
          #            "logical",  or  "extended".   name  is  required  for  GPT  partition tables and fs-type is optional.  fs-type can be one of
          #            "btrfs", "ext2", "ext3", "ext4", "fat16", "fat32", "hfs", "hfs+", "linux-swap", "ntfs", "reiserfs", "udf", or "xfs".
 
-echo     mkpart primary $FILESYSTEM $NEW_PART_START $NEW_PART_END
+# sudo parted -ms "$DEVICE" unit B prin
+
+    run_command "sudo parted "$MEDIA" unit B mkpart primary $FILESYSTEM $NEW_PART_START $NEW_PART_END"  $LINENO
+    
     
     # create filesystem in the partition
-    
+    run_command "sudo mkfs.ntfs -f -L NTFS $MEDIA$(($MEDIA_LAST_PARTITION_NUMBER + 1))" $LINENO
     
     
 }
@@ -3202,9 +3214,6 @@ case $CMD in
                 run_command "lsblk -f $TARGET" $LINENO
                 ;;
             
-         #   part)
-          #      ;;
-            
             *)
                 echo Error
                 ;;
@@ -3215,9 +3224,9 @@ case $CMD in
     
         ;;
 
-    umount|unmount)      media_unmount $TARGET  ;;  
+    umount|unmount)         media_unmount $TARGET  ;;  
 
-    unmountDisk)    media_unmountDisk $TARGET ;;
+    umountDisk|unmountDisk) media_unmountDisk $TARGET ;;
     
     eject)
         media_check_target $TARGET disk
