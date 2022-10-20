@@ -53,6 +53,12 @@ NEW_END=
 
 media_unmount(){
     local TARGET=$1
+    
+    if [[ -z $TARGET ]]; then
+        echo "Usage: diskutil umount partition"
+        return
+    fi
+    
     media_check_target $TARGET part
     if (( $? )); then
         exit 1
@@ -63,6 +69,13 @@ media_unmount(){
     
 media_unmountDisk(){
     local TARGET=$1
+    
+    if [[ -z $TARGET ]]; then
+        echo "Usage: diskutil umountDisk device"
+        echo "Attempt to unmount all the directly-mountable volumes on the disk."
+        return
+    fi
+    
     media_check_target $TARGET disk
     if (( $? )); then
         exit 1
@@ -78,6 +91,12 @@ media_unmountDisk(){
     
 media_mount(){
     local TARGET=$1
+    
+    if [[ -z $TARGET ]]; then
+        echo "Usage: diskutil mount partition"
+        return
+    fi
+    
     media_check_target $TARGET part
     if (( $? )); then
         exit 1
@@ -87,6 +106,13 @@ media_mount(){
         
 media_mountDisk(){
     local TARGET=$1
+    
+    if [[ -z $TARGET ]]; then
+        echo "Usage: diskutil mountDisk device"
+        echo "Attempts to mount all filesystems on device"
+        return
+    fi
+    
     media_check_target $TARGET disk
     if (( $? )); then
         exit 1
@@ -100,49 +126,12 @@ media_mountDisk(){
     done
 }        
         
-        
-media_help_old(){
-    echo "Raspberry Pi media tool"
-    echo Usage:
-    echo "$SCRIPTNAME [command] [target] [specs] [  ] "
-    echo 
-    echo "Command can be:"
-    echo "list                  - list media"
-    echo "check [partition]     - check partition"
-    echo "resize partition [min|max|bytes]"
-    echo "fix partition ??? "
-    echo "mount [partition]"
-    echo "eject [partition]"
-    echo "analyze [partition]"
-    echo
-    echo "format device [fat32|exfat|ntfs|ext4] [-y]"
-    echo "wipe device"
-    echo "test device"
-    echo
-    echo "settings"
-    echo "log"
-    echo
-    echo "info      info"
-    echo "-h        help"
-    echo "-v        ver" 
-    echo
-    echo examples
-    echo $SCRIPTNAME resize /dev/sda1 min
-    echo $SCRIPTNAME resize /dev/sda1 2000000000    
-    echo $SCRIPTNAME fix /dev/sda3
-    echo $SCRIPTNAME format /dev/sda fat32
-    echo
-    echo resize notes
-    echo min will resize the filesystem and partition to the filesystem minimum
-    echo max will resize the filesystem and partition to the partition max including freespace at end
-    echo fix will resize the filesystem to fill the partition
-    
-}
 
 
 disk_utility_help(){
 echo "Disk Utility Tool
 Utility to manage local disks and volumes
+Based on Apple's diskutil
 Most commands require an administrator or root user
 WARNING: Most destructive operations are not prompted
 
@@ -150,7 +139,7 @@ Usage:  diskutil [quiet] <verb> <options>, where <verb> is as follows:
 
      list                 (List the partitions of a disk)
      info[rmation]        (Get information on a specific disk or partition)
-     X listFilesystems      (List file systems available for formatting)
+     listFilesystems      (List file systems available for formatting)
      X listClients          (List all current disk management clients)
      X activity             (Continuous log of system-wide disk arbitration)
 
@@ -1205,6 +1194,11 @@ fi
 
 media_volume_verify() {
     local VOLUME=$1
+    
+    if [[ -z $VOLUME ]]; then
+        echo "Usage: diskutil verifyVolume partition"
+        return
+    fi
      
     if [ ! -e $VOLUME ]; then
         error $LINENO "Volume $VOLUME does not exist."
@@ -1212,10 +1206,17 @@ media_volume_verify() {
     fi
     
     run_command "sudo fsck -V -M -n $VOLUME"
+    
+    run_command "sudo badblocks -s -v $VOLUME"
 }
 
 media_volume_repair() {
     local VOLUME=$1
+
+    if [[ -z $VOLUME ]]; then
+        echo "Usage: diskutil repairVolume partition"
+        return
+    fi
      
     if [ ! -e $VOLUME ]; then
         error $LINENO "Volume $VOLUME does not exist."
@@ -1224,6 +1225,8 @@ media_volume_repair() {
     
     run_command "sudo fsck -V -M -y $VOLUME"
     
+    run_command "sudo badblocks -s -v $VOLUME"
+    
     
     # e2fsck -f -y -v -C 0 '/dev/sda2'
 }
@@ -1231,6 +1234,12 @@ media_volume_repair() {
 
 media_disk_verify() {
     local DISK=$1
+     
+    if [[ -z $DISK ]]; then
+        echo "Usage: diskutil verifyDisk disk"
+        return
+    fi     
+     
      
     media_check_target $DISK disk 
     if (( $? )); then
@@ -1252,6 +1261,12 @@ media_disk_verify() {
 
 media_disk_repair() {
     local DISK=$1
+     
+    if [[ -z $DISK ]]; then
+        echo "Usage: diskutil repairDisk disk"
+        echo "Attempt to repair all filesystems onthe disk"
+        return
+    fi 
      
     if [ ! -e $DISK ]; then
         error $LINENO "Volume $DISK does not exist."
@@ -1815,8 +1830,13 @@ media_format_volume(){
     local PART_NAME=$2
     local PARTITION=$3
     
+    if [[ -z $FORMAT ]]; then
+        echo "Usage: diskutil eraseVolume format name partition"
+        return
+    fi
+    
     if [[ -z $PARTITION ]] ; then
-        ui_msg_error $LINENO "Device not specified."
+        ui_msg_error $LINENO "Partition not specified."
         lsblk -dp
         exit 1
     fi
@@ -1881,127 +1901,25 @@ media_format_volume(){
 }
 
 
-media_format_disk(){
-    local FORMAT=${1:-"fat32"}    # fat32, ntfs, ext4, exfat
-    local PART_NAME=$2
-    local DEVICE=$3
-    local SILENT=${4:-"-n"}
-    
-    media_check_target $DEVICE disk
-    if (( $? )); then
-        return 1
-    fi
-    
-    local ROOT="$(env_root_device)"
-    local TYPE="$(lsblk $DEVICE -dnpo TYPE)"
-    local NAME="$(lsblk $DEVICE -dnpo VENDOR,MODEL,SIZE,TYPE) ($DEVICE)"
-    local PARTITION=$DEVICE
-	
-  #  if [[ -z $1 ]] ; then
-  #      ui_msg_error $LINENO "Device not specified."
-  #      lsblk -dp
-  #      return 1
-  #  fi
-
-  #  if [[ ! -e $DEVICE ]]; then
-  #      ui_msg_error $LINENO "'$DEVICE' does not exist"
-  #      return 2
-  #  fi
-
-
-
-
-    if [[ $1 = $ROOT ]] ; then
-        ui_msg_error $LINENO "Can not format root device"
-        return 3
-    fi
-    
-    # Stop if dev is the root device
-    if [[ $1 = $(env_root_device) ]]; then
-        ui_msg_error $LINENO "Format root device not allowed"
-        return 3
-    fi
-
-    ui_echo "$PRODUCTNAME $SCRIPTVER Format '$(media_name $DEVICE)' to '$FORMAT'..." white  
+media_reformat(){
+    local PARTITION=$1
     
     
-    case $FORMAT in
-        fat16|fat32)
-            if [[ -z $(which mkfs.vfat) ]] ; then
-                echo Installing vfat support ...
-                sudo $INSTALL dosfstools
-            fi
-            
-            PART_TABLE=msdos
-            PART_TYPE=primary
-           # PART_NAME=FAT
-            FS_TYPE=$FORMAT
-            ;;
-        
-        exfat)
-            #https://unix.stackexchange.com/questions/61209/create-and-format-exfat-partition-from-linux
-            if [[ -z $(which mkfs.exfat) ]] ; then
-                echo Installing exfat support ...
-                sudo $INSTALL dosfstools
-                sudo $INSTALL exfat-utils 
-                sudo $INSTALL exfat-fuse 
-                #sudo modprobe fuse 
-                #echo "fuse" | sudo tee -a /etc/modules
-            fi   
-            
-            PART_TABLE=gpt
-            PART_TYPE=$FORMAT
-          #  PART_NAME=EXFAT
-            FS_TYPE=ntfs
-            ;;
-        
-        ntfs)
-            if [[ -z $(which mkfs.ntfs) ]] ; then
-                echo Installing ntfs support...
-                sudo $INSTALL fuse 
-                sudo $INSTALL ntfs-3g 
-                sudo $INSTALL ntfsprogs  #ntfsprogs is for arch
-                #sudo modprobe fuse 
-                #echo "fuse" | sudo tee -a /etc/modules
-            fi              
-            
-            PART_TABLE=gpt
-            PART_TYPE=$FORMAT
-         #   PART_NAME=NTFS
-            FS_TYPE=$FORMAT
-            ;;
-        
-        hfs)
-            if [[ -z $(which mkfs.hfs) ]]; then
-                echo Installing hfs support...
-                sudo $INSTALL hfsprogs 
-            fi       
-                 
-            PART_TABLE=gpt
-            PART_TYPE=$FORMAT
-         #   PART_NAME=HFS
-            FS_TYPE=HFS
-            ;;
-
-        ext2 | ext3 | ext4)
-            PART_TABLE=gpt
-            PART_TYPE=$FORMAT
-         #   PART_NAME=$FORMAT
-            FS_TYPE=$FORMAT
-            ;;
-    esac
-
-
-    if [[ $SILENT != -y ]]; then
-        RESULT=$(ui_yesno "ERASE MEDIA" "WARNING!!  \n\nFormat '$DEVICE' to '$FORMAT' \n\nAll existing data on '$NAME' will be erased.  \n\nAre you sure you want to continue? y/n?" "--defaultno")
+    if [[ -z $1 ]]; then
+        echo "Usage: diskutil reformat device"
+        echo Example: diskutil reformat /dev/sda
         echo
-        if [[ $RESULT != y ]]; then
-            ui_msg "ERASE MEDIA" "~ $DEVICE not erased. you answered '$RESULT'" "" "" log
-            return 1
-        fi
+        echo "This does not currently work"
+        return
     fi
+    
+    #FS=exfat
+    #NAME=NEW
+    FS=$(lsblk -n -o FSTYPE $PARTITION)
+    NAME=$(lsblk -n -o LABEL $PARTITION)
 
-    ui_countdown 10 "ERASE MEDIA"  # "Erasing Media '$(media_name $DEVICE)' in 10 seconds...\n\n"
+
+    ui_countdown 10 "ERASE MEDIA"  # "Erasing Media '$(media_name $PARTITION)' in 10 seconds...\n\n"
     if (( $? )); then
     # ui_msg  "INSTALL:" "$MSG" "white" "OK" "log"
         ui_msg  "ERASE MEDIA"  "~ Erase Media stopped." "" "" log
@@ -2009,42 +1927,31 @@ media_format_disk(){
     fi
 
 
-    # if selected whole disk... wipe the partition table and make a new partition table.
-    if  [[ $TYPE = disk ]]; then
-        echo "Unmounting '$DEVICE'..."
-        #run_command "sudo umount $DEVICE? 2> /dev/null"
-        media_unmountDisk $DEVICE
-        
-        echo "Writing zeros to '$DEVICE'..."
-        run_command "sudo dd if=/dev/zero of=$DEVICE bs=512 count=4" $LINENO
-
-        echo "Writing new '$PART_TABLE' partition table to '$DEVICE'..."
-        run_command "sudo parted -s $DEVICE mklabel $PART_TABLE" $LINENO
-
-        echo "Creating empty partition on '$DEVICE'..."
-        run_command "sudo parted -s -a opt $DEVICE mkpart $PART_TYPE $FS_TYPE 2M 100%" $LINENO
-        
-        PARTITION=$DEVICE\1   
-    else    
-        echo "Unmounting '$DEVICE'..."
-        #run_command "sudo umount $DEVICE 2> /dev/null"
-        media_unmount $DEVICE
-    fi    
-
-    sleep 2
+    media_format_volume $FS $NAME $PARTITION
     
-    media_format_volume $FORMAT $PART_NAME $PARTITION
-
 }
 
-media_format_old(){
-    local DEVICE=$1
-    local FORMAT=${2:-"fat32"}    # fat32, ntfs, ext4, exfat
-    local SILENT=${3:-"-n"}
+
+media_format_disk(){
+    
+    if [[ -z $1 ]]; then
+        echo "Usage: diskutil eraseDisk format name [APM[Format]|[MBR[Format]|GPT[Format]] MountPoint|DiskIdentifier|DevieNode"
+        echo Example: diskutil eraseDisk JHFS+ UntitledUFS /dev/disk3
+        echo Example: diskutil eraseDisk EXFAT NEWDISK /dev/sda
+        return
+    fi
+    
+    #PART_NAME
+    #FSLABEL
+
+    local FORMAT=${1:-"fat32"}    # fat16, fat32, exfat, ntfs, ext2, ext3, ext4
+    local NAME=$2
+    local DEVICE=$3
+    #local SILENT=${3:-"-n"}
     
     local ROOT="$(env_root_device)"
     local TYPE="$(lsblk $DEVICE -dnpo TYPE)"
-    local NAME="$(lsblk $DEVICE -dnpo VENDOR,MODEL,SIZE,TYPE) ($DEVICE)"
+   # local NAME="$(lsblk $DEVICE -dnpo VENDOR,MODEL,SIZE,TYPE) ($DEVICE)"
     local PARTITION=$DEVICE
 
 	if [[ $FORMAT = fat32 ]] ; then 
@@ -2054,7 +1961,7 @@ media_format_old(){
 	else
 		PART_TABLE=gpt
 		PART_TYPE=
-		PART_NAME=$FORMAT
+		PART_NAME=$NAME
 	fi
 
 	if [[ $FORMAT = exfat ]]; then
@@ -2064,7 +1971,7 @@ media_format_old(){
 	fi
 	
 
-    if [[ -z $1 ]] ; then
+    if [[ -z $DEVICE ]] ; then
         ui_msg_error $LINENO "Device not specified."
         lsblk -dp
         return 1
@@ -2075,13 +1982,13 @@ media_format_old(){
         return 2
     fi
 
-    if [[ $1 = $ROOT ]] ; then
+    if [[ $DEVICE = $ROOT ]] ; then
         ui_msg_error $LINENO "Can not format root device"
         return 3
     fi
     
     # Stop if dev is the root device
-    if [[ $1 = $(env_root_device) ]]; then
+    if [[ $DEVICE = $(env_root_device) ]]; then
         ui_msg_error $LINENO "Format root device not allowed"
         return 3
     fi
@@ -2116,25 +2023,15 @@ media_format_old(){
        
         echo "Writing zeros to '$DEVICE'..."
         run_command "sudo dd if=/dev/zero of=$DEVICE bs=512 count=4" $LINENO
-        if (( $? )); then
-            ui_msg_error $LINENO "Writing zeros failed"
-            return 9
-        fi
 
         echo "Writing new '$PART_TABLE' partition table to '$DEVICE'..."
         run_command "sudo parted -s $DEVICE mklabel $PART_TABLE" $LINENO
-        if (( $? )); then
-            ui_msg_error $LINENO "mklabel failed"
-            return 10
-        fi
 
         echo "Creating empty partition on '$DEVICE'..."
-        # run_command "sudo parted -s -a opt $DEVICE mkpart primary $FS_TYPE 2M 100%" $LINENO
-        run_command "sudo parted -s -a opt $DEVICE mkpart $PART_TYPE $PART_NAME $FS_TYPE 2M 100%" $LINENO
-        if (( $? )); then
-            ui_msg_error $LINENO "mkpart failed"
-            return 11
-        fi
+        run_command "sudo parted -s -a opt $DEVICE mkpart $PART_TYPE $PART_NAME $FS_TYPE 1M 100%" $LINENO
+        
+        echo "Set Partition name to ..."
+        run_command "   " $LINENO
         
         PARTITION=$DEVICE\1    
     fi    
@@ -2143,43 +2040,55 @@ media_format_old(){
     echo "Formatting the partition to '$FORMAT'..."
 
     case $FORMAT in
-        fat16)  
+        fat16) 
+            if [[ -z $(which mkfs.vfat) ]] ; then
+                echo Installing vfat support ...
+                sudo $INSTALL dosfstools
+            fi
             run_command "sudo mkfs.vfat -F16 -v -I -n FAT16 $PARTITION" $LINENO
-            rc=$?
+            ES=$?
             ;;
 
         fat32)
+            if [[ -z $(which mkfs.vfat) ]] ; then
+                echo Installing vfat support ...
+                sudo $INSTALL dosfstools
+            fi
             run_command "sudo mkfs.vfat -v -I -n FAT32 $PARTITION" $LINENO
-            rc=$?
+            ES=$?
             ;;
             
         exfat)
             #https://unix.stackexchange.com/questions/61209/create-and-format-exfat-partition-from-linux
             if [[ -z $(which mkfs.exfat) ]] ; then
                 echo Installing exfat support ...
-                sudo $INSTALL exfat-utils exfat-fuse
-                sudo modprobe fuse 
-                echo "fuse" | sudo tee -a /etc/modules
+                sudo $INSTALL exfat-utils 
+                sudo $INSTALL exfat-fuse 
+                #sudo modprobe fuse 
+                #echo "fuse" | sudo tee -a /etc/modules
             fi    
-            run_command "sudo mkfs.exfat -n EXFAT $PARTITION" $LINENO
-            rc=$?
+            # the -L is Label
+            run_command "sudo mkfs.exfat -L $NAME $PARTITION" $LINENO
+            ES=$?
             ;;      
         
         ntfs)
             if [[ -z $(which mkfs.ntfs) ]] ; then
                 #sudo apt-get install fuse ntfs-3g
                 echo Installing ntfs support...
-                sudo $INSTALL fuse ntfs-3g
-                sudo modprobe fuse 
-                echo "fuse" | sudo tee -a /etc/modules
+                sudo $INSTALL fuse 
+                sudo $INSTALL ntfs-3g 
+                sudo $INSTALL ntfsprogs  #ntfsprogs is for arch
+                #sudo modprobe fuse 
+                #echo "fuse" | sudo tee -a /etc/modules
             fi  
             run_command "sudo mkfs.ntfs -f -L NTFS $PARTITION" $LINENO
-            rc=$?
+            ES=$?
             ;;
         
         ext2 | ext3 | ext4)
             run_command "sudo mkfs -t $FORMAT -L $FORMAT -E root_owner=$UID:$GID -F $PARTITION" $LINENO
-            rc=$?
+            ES=$?
             ;;
             
         *)
@@ -2187,168 +2096,26 @@ media_format_old(){
             
     esac
 
-    if (( $rc )); then
-        ui_msg_error $LINENO "mkfs failed"
+    if (( $ES)); then
+  #      ui_msg_error $LINENO "mkfs failed"
         return 1
     else
-        ui_msg "ERASE MEDIA" "~ Formatting complete. '$(media_name $DEVICE)' has been erased." white "" log
+        ui_msg "ERASE MEDIA" "~ Format complete. '$(media_name $DEVICE)' has been erased." white "" log
     fi
 
-    echo "Mounting the drive..."
-    sleep 2
-    run_command "udisksctl mount -b $PARTITION" $LINENO
-    if (( $? )); then
-        ui_msg_warning $LINENO "mount failed"
-        #return 1
-    fi
-}
-
-
-
-media_format_x(){
-    local DEVICE=$1
-    local FORMAT=${2:-"fat32"}    # fat32, ntfs, ext4, exfat
-    local SILENT=${3:-"-n"}
-    
-    local ROOT="/dev/$(env_root_device)"
-    local TYPE="$(lsblk $DEVICE -dnpo TYPE)"
-    local NAME="$(lsblk $DEVICE -dnpo VENDOR,MODEL,SIZE,TYPE) ($DEVICE)"
-    local PARTITION=$DEVICE
-
-    if [[ -z $1 ]] ; then
-        error $LINENO "Device not specified."
-        lsblk -dp
-        return 1
-    fi
-
-    if [[ ! -e $DEVICE ]]; then
-      error $LINENO "'$DEVICE' does not exist"
-      return 2
-    fi
-
-    if [[ $1 = $ROOT ]] ; then
-        error $LINENO "Can not format root device"
-        return 3
-    fi
-    
-    if [[ $SILENT != "-y" ]]; then
-        RESULT=$(ui_yesno "ERASE" "WARNING!!  \n\nFormat '$DEVICE' to '$FORMAT' \n\nAll existing data on '$NAME' will be erased.  \n\nAre you sure you want to continue? y/n?" "--defaultno")
-        #echo
-        if [[ $RESULT != y ]]; then
-            ui_msg "ERASE" "$DEVICE not erased. you answered '$RESULT'"
-            return 1
-        fi
-    fi
- 
-    echo_white "Formatting '$DEVICE' to '$FORMAT'..."
-
-    ui_countdown 10 "" "Erasing Media '$(media_name $DEVICE)' in 10 seconds...\n\n"
-    if (( $? )); then
-        error $LINENO Error in countdown
-        return 2
-    fi
-
-    echo "Unmounting '$DEVICE'..."
-    sudo umount $DEVICE 2> /dev/null
-    sudo umount $DEVICE? 2> /dev/null
-
-
-    # if selected whole disk... wipe the partition table and make a new partition table.
-    if  [[ $TYPE = disk ]]; then
-       
-        echo "Writing zeros to '$DEVICE'..."
-        run_command "sudo dd if=/dev/zero of=$DEVICE bs=512 count=4" $LINENO
+    # mount the drive with udisksctl if installed
+    if [[ $(env_which udisksctl) ]]; then
+        echo "Mounting the drive..."
+        sleep 2
+        run_command "udisksctl mount -b $PARTITION" $LINENO
         if (( $? )); then
-            error $LINENO "Writing zeros failed"
-            return 9
+            ui_msg_warning $LINENO "mount failed"
+            #return 1
         fi
-
-        if [[ $FORMAT = "fat32" ]] ; then 
-            PART_TABLE=msdos
-        else
-            PART_TABLE=gpt
-        fi
-        echo "Writing new '$PART_TABLE' partition table to '$DEVICE'..."
-        run_command "sudo parted -s $DEVICE mklabel $PART_TABLE" $LINENO
-        if (( $? )); then
-            error $LINENO "mklabel failed"
-            return 10
-        fi
-
-        echo "Creating 'primary' partition on '$DEVICE'..."
-        run_command "sudo parted -s -a opt $DEVICE mkpart primary 4M 100%" $LINENO
-        if (( $? )); then
-            error $LINENO "mkpart failed"
-            return 11
-        fi
-        
-        PARTITION=$DEVICE\1    
     fi    
-
-
-    echo "Formatting the partition to '$FORMAT'..."
-
-    case $FORMAT in
-        fat16)
-            run_command "sudo mkfs.vfat -F16 -v -I -n FAT16 $PARTITION" $LINENO
-            rc=$?
-            ;;
-
-        fat32)
-            run_command "sudo mkfs.vfat -v -I -n FAT32 $PARTITION" $LINENO
-            rc=$?
-            ;;
-        
-        ntfs)
-            run_command "sudo mkfs.ntfs -f -L NTFS $PARTITION" $LINENO
-            rc=$?
-            ;;
-        
-        ext2)
-            run_command "sudo mkfs.ext2 -L EXT2 -E root_owner=$UID:$GID -F $PARTITION" $LINENO
-            rc=$?
-            ;;
-            
-        ext3)
-            run_command "sudo mkfs.ext3 -L EXT3 -E root_owner=$UID:$GID -F $PARTITION" $LINENO
-            rc=$?
-            ;;
-        
-        ext4)
-            run_command "sudo mkfs.ext4 -L EXT4 -E root_owner=$UID:$GID -F $PARTITION" $LINENO
-            rc=$?
-            ;;
- 
-        exfat)
-            #https://unix.stackexchange.com/questions/61209/create-and-format-exfat-partition-from-linux
-            sudo apt-get install exfat-utils exfat-fuse
-            sudo modprobe fuse 
-            echo "fuse" | sudo tee -a /etc/modules
-            run_command "sudo mkfs.exfat -n EXFAT $PARTITION" $LINENO
-            rc=$?
-            ;;   
-            
-        *)
-            error $LINENO "Unknown format '$FORMAT'"
-            
-    esac
-
-    if (( $rc )); then
-        error $LINENO "mkfs failed"
-        return 12
-    fi
-
-    echo "Mounting the drive..."
-    sleep 2
-    run_command "udisksctl mount -b $PARTITION" $LINENO
-    if (( $? )); then
-        error $LINENO "mount failed"
-        return 13
-    fi
-
-    ui_msg "ERASE MEDIA" "'$(media_name $DEVICE)' has been erased. \n\nIt has been remounted."
-
 }
+
+
 
 
 media_clone(){
@@ -2805,6 +2572,14 @@ media_test(){
 
 
 media_rename() {
+    # changes the filesystem label.  NOT the Partition name
+    
+    if [[ -z $1 ]]; then
+        echo "Usage: diskutil rename[Volume] Device newName"
+        echo "Example: diskutil rename /dev/sda1 NEWDISK"
+        return
+    fi
+    
     PARTITION=$1
     NAME=$2
     
@@ -3206,7 +2981,12 @@ case $CMD in
         fi    
         ;;        
 
-    info) 
+    info*) 
+        if [[ -z $TARGET ]]; then
+            echo "Usage: diskutil info[rmation] device"
+            exit
+        fi
+    
         case $(lsblk -n -d -o type $TARGET) in
             disk|part) 
                 #run_command "lsblk $TARGET -o name,path,mountpoint,fstype,pttype,ptuuid,partuuid,size,label,vendor,model" $LINENO
@@ -3221,7 +3001,11 @@ case $CMD in
         ;;
 
     listFilesystems)
-    
+        echo "Formattable file systems"
+        echo
+        echo "FAT16, FAT32, EXFAT, NTFS, EXT2, EXT3, EXT4"
+        
+        exit
         ;;
 
     umount|unmount)         media_unmount $TARGET  ;;  
@@ -3229,6 +3013,11 @@ case $CMD in
     umountDisk|unmountDisk) media_unmountDisk $TARGET ;;
     
     eject)
+        if [[ -z $2 ]]; then
+            echo "Usage: diskutil eject device"
+            exit
+        fi      
+        
         media_check_target $TARGET disk
         if (( $? )); then
             exit 1
@@ -3241,7 +3030,7 @@ case $CMD in
         
     mountDisk)          media_mountDisk $TARGET;;
 
-    rename)             media_rename $2 $3 ;;
+    rename|renameVolume)             media_rename $2 $3 ;;
     
     verifyVolume)       media_volume_verify $TARGET  ;;
     repairVolume)       media_volume_repair $TARGET;;
@@ -3250,7 +3039,7 @@ case $CMD in
     
     eraseDisk)          media_format_disk $2 $3 $4 ;;
     eraseVolume)        media_format_volume $2 $3 $4;;
-    reformat)           ;;
+    reformat)           media_reformat $2;;
     zeroDisk)           media_wipe $TARGET  ;;
     randomDisk)         ;;
     
