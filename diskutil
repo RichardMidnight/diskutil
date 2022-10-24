@@ -58,10 +58,12 @@ NEW_END=
 
 disk_utility_help(){
 echo "Disk Utility Tool
-Utility to manage disks and partitiona
+Utility to manage disks and partitions
 Based on Apple's diskutil
 Most commands require an administrator or root user
 WARNING: Most destructive operations are not prompted
+
+This simplifies the use of: parted,  lsblk, udisksctl mount, udisksctl unmount, udisksctl power-off, 
 
 Usage:  diskutil [quiet] <verb> <options>, where <verb> is as follows:
 
@@ -81,16 +83,16 @@ Usage:  diskutil [quiet] <verb> <options>, where <verb> is as follows:
      X enableOwnership      (Exact on-disk User/Group IDs on a mounted volume)
      X disableOwnership     (Ignore on-disk User/Group IDs on a mounted volume)
 
-     rename[Volume]       (Rename a filesystem)
+     rename[Filesystem]   (Rename a filesystem)
 
-     verify         (Verify the file system data structures of a filesystem)
-     repair         (Repair the file system data structures of a filesystem)
+     verify               (Verify the file system data structures of a filesystem)
+     repair               (Repair the file system data structures of a filesystem)
      verifyDisk           (Verify the components of a partition map of a disk)
      repairDisk           (Repair the components of a partition map of a disk)
-     X resetFusion          (Reset the components of a machines Fusion Drive)
+     X resetFusion        (Reset the components of a machines Fusion Drive)
 
-     eraseDisk            (Erase an existing disk, removing all volumes)
-     eraseVolume          (Erase an existing volume)
+     eraseDisk            (Erase an existing disk, removing all partitions and data)
+     erasePartition          (Erase an existing volume)
      reformat             (Erase an existing volume with same name and type)
      X eraseOptical         (Erase optical media (CD/RW, DVD/RW, etc.))
      zeroDisk             (Erase a disk, writing zeros to the media)
@@ -383,6 +385,22 @@ get_bytes(){
 }
 
 
+device_fullname(){
+    DEVICE=$1
+    
+    if [[ -z $DEVICE ]]; then
+        return
+    fi
+    
+    
+    if [[ ${DEVICE:0:5} != "/dev/" ]]; then
+        #echo "Device prefix not specified.  Adding '/dev/'"
+        #INDEV="/dev/"$INDEV
+        echo "/dev/$DEVICE"
+    else
+        echo "$DEVICE"
+    fi
+}
 
 
 env_root_device() {
@@ -1156,8 +1174,8 @@ info_echo(){
 }
 
 
-media_mount(){
-    local TARGET=$1
+media_filesystem_mount(){
+    local TARGET=$(device_fullname $1)
     
     if [[ -z $TARGET ]]; then
         echo "Usage: diskutil mount partition"
@@ -1172,8 +1190,8 @@ media_mount(){
 }
         
         
-media_mountDisk(){
-    local TARGET=$1
+media_disk_mount(){
+    local TARGET=$(device_fullname $1)
     
     if [[ -z $TARGET ]]; then
         echo "Usage: diskutil mountDisk device"
@@ -1195,8 +1213,8 @@ media_mountDisk(){
 }        
 
 
-media_unmount(){
-    local TARGET=$1
+media_filesystem_unmount(){
+     local TARGET=$(device_fullname $1)
     
     if [[ -z $TARGET ]]; then
         echo "Usage: diskutil umount partition"
@@ -1211,8 +1229,8 @@ media_unmount(){
     }
     
     
-media_unmountDisk(){
-    local TARGET=$1
+media_disk_unmount(){
+     local TARGET=$(device_fullname $1)
     
     if [[ -z $TARGET ]]; then
         echo "Usage: diskutil umountDisk device"
@@ -1231,6 +1249,25 @@ media_unmountDisk(){
        run_command "udisksctl unmount -b $TARGET$PART" $LINENO  2>/dev/null
     done    
     }    
+
+
+media_disk_eject(){
+        if [[ -z $1 ]]; then
+            echo "Usage: diskutil eject device"
+            exit
+        fi      
+        
+        TARGET=$(device_fullname $1)
+        
+        media_check_target $TARGET disk
+        if (( $? )); then
+            exit 1
+        fi
+        
+        media_disk_unmount $TARGET
+        run_command "udisksctl power-off -b $TARGET" $LINENO
+    
+}
 
 
 media_name(){
@@ -1294,44 +1331,57 @@ fi
 }
 
 
-media_volume_verify() {
-    local VOLUME=$1
+media_filesystem_verify() {
+    local PARTITION=$(device_fullname $1)
     
-    if [[ -z $VOLUME ]]; then
-        echo "Usage: diskutil verifyVolume partition"
+    if [[ -z $PARTITION ]]; then
+        echo "Usage: diskutil verifyFilesystem partition"
         return
     fi
      
-    if [ ! -e $VOLUME ]; then
-        error $LINENO "Volume $VOLUME does not exist."
+    if [ ! -e $PARTITION ]; then
+        error $LINENO "Volume $PARTITION does not exist."
         return 1
     fi
     
-    # -v=verbose -f=force -n=nochanges
-    run_command "sudo fsck -v -f -n $VOLUME"
+    media_check_target $PARTITION part 
+    if (( $? )); then
+   #     error $LINENO "'$PARTITION' is not a partition."
+        return 1
+    fi 
     
-    # run_command "sudo badblocks -s -v $VOLUME"
+    # -v=verbose -f=force -n=nochanges
+    run_command "sudo fsck -v -n $PARTITION"
+    
+    # run_command "sudo badblocks -s -v $PARTITION"
 }
 
 
-media_volume_repair() {
-    local VOLUME=$1
+media_filesystem_repair() {
+    local PARTITION=$(device_fullname $1)
 
-    if [[ -z $VOLUME ]]; then
-        echo "Usage: diskutil repairVolume partition"
+    if [[ -z $PARTITION ]]; then
+        echo "Usage: diskutil repairFilesystem partition"
         return
     fi
      
-    if [ ! -e $VOLUME ]; then
-        error $LINENO "Volume $VOLUME does not exist."
+     
+    media_check_target $PARTITION part 
+    if (( $? )); then
+   #     error $LINENO "'$PARTITION' is not a partition."
         return 1
-    fi
+    fi 
+     
+     
+   # if [ ! -e $PARTITION ]; then
+   #     error $LINENO "Volume $PARTITION does not exist."
+   #     return 1
+   # fi
     
     # -v=verbose -f=force -p=automatic repair
-    run_command "sudo fsck -v -f $VOLUME"
+    run_command "sudo fsck -v -p $PARTITION"
     
-    #run_command "sudo badblocks -s -v $VOLUME"
-    
+    #run_command "sudo badblocks -s -v $v"
     
     # e2fsck -f -y -v -C 0 '/dev/sda2'
 }
@@ -1370,7 +1420,7 @@ media_disk_repair() {
      
     if [[ -z $DISK ]]; then
         echo "Usage: diskutil repairDisk disk"
-        echo "Attempt to repair all filesystems onthe disk"
+        echo "Attempt to repair partition table"
         return
     fi 
      
@@ -1379,8 +1429,13 @@ media_disk_repair() {
         return 1
     fi
 
+    media_check_target $DISK disk 
+    if (( $? )); then
+        return 1
+    fi 
+
     
-    run_command "testdisk $DISK" $LINENO
+    #run_command "testdisk $DISK" $LINENO
 
     #PARTITION_COUNT=$(media_partition_count $TARGET)
     #echo "repairing $PARTITION_COUNT Partitions..."
@@ -1388,6 +1443,12 @@ media_disk_repair() {
     #   run_command "sudo fsck -M -V -y $DISK$PART" $LINENO  2>/dev/null
     #done  
     #run_command "sudo badblocks -s -v $DISK"
+    
+    echo "Partition table..."
+    run_command "sudo parted $DISK print" $LINENO
+    
+    echo "no changes made"
+    echo "If you need to recover a partition, try using 'testdisk' "
 }
 
 
@@ -1669,6 +1730,17 @@ return
 }
 
 
+media_partition_rename () {
+    local PARTITION=$1
+    local PARTITION_NUMB=
+    local NAME=$2
+    
+    
+    run_command 'sudo parted $PARTITION name "$NAME"' $LINENO
+    
+}
+
+
 media_filesystem_resize(){
     #Resize filesystemst run using both the -n and 
     local PARTITION=$1
@@ -1835,13 +1907,13 @@ media_size() {
 }
 
 
-media_format_volume(){
+media_partition_format(){
     local FORMAT=$1
-    local PART_NAME=$2
+    local FS_NAME=$2
     local PARTITION=$3
     
     if [[ -z $FORMAT ]]; then
-        echo "Usage: diskutil eraseVolume format name partition"
+        echo "Usage: diskutil erasePartition format name partition"
         return
     fi
     
@@ -1858,38 +1930,38 @@ media_format_volume(){
     
     echo "Unmounting 'PARTITION'..."
     #run_command "sudo umount $DEVICE 2> /dev/null"
-    media_unmount $PARTITION
+    media_filesystem_unmount $PARTITION
     
     echo "Formatting the partition to '$FORMAT'..."
 
     case $FORMAT in
         fat16)  
-            run_command "sudo mkfs.vfat -F16 -v -I -n FAT16 $PARTITION" $LINENO
+            run_command "sudo mkfs.vfat -F16 -v -I -n $FS_NAME $PARTITION" $LINENO
             ES=$?
             ;;
 
         fat32)
-            run_command "sudo mkfs.vfat -v -I -n $PART_NAME $PARTITION" $LINENO
+            run_command "sudo mkfs.vfat -v -I -n $FS_NAME $PARTITION" $LINENO
             ES=$?
             ;;
             
         exfat)
-            run_command "sudo mkfs.exfat -n $PART_NAME $PARTITION" $LINENO
+            run_command "sudo mkfs.exfat -n $FS_NAME $PARTITION" $LINENO
             ES=$?
             ;;      
         
         ntfs)
-            run_command "sudo mkfs.ntfs -f -L $PART_NAME $PARTITION" $LINENO
+            run_command "sudo mkfs.ntfs -f -L $FS_NAME $PARTITION" $LINENO
             ES=$?
             ;;
         
         ext2 | ext3 | ext4)
-            run_command "sudo mkfs -t $FORMAT -L $FORMAT -E root_owner=$UID:$GID -F $PARTITION" $LINENO
+            run_command "sudo mkfs -t $FORMAT -L $FS_NAME -E root_owner=$UID:$GID -F $PARTITION" $LINENO
             ES=$?
             ;;
             
         hfs)
-            run_command "sudo mkfs.hfs -v $PART_NAME $PARTITION" $LINENO
+            run_command "sudo mkfs.hfs -v $FS_NAME $PARTITION" $LINENO
             ;;
             
         *)
@@ -1906,12 +1978,12 @@ media_format_volume(){
 
     echo "Mounting the drive..."
     sleep 2
-    media_mount $PARTITION
+    media_filesystem_mount $PARTITION
       
 }
 
 
-media_reformat(){
+media_partition_reformat(){
     local PARTITION=$1
     
     
@@ -1942,7 +2014,7 @@ media_reformat(){
 }
 
 
-media_format_disk(){
+media_disk_format(){
     
     if [[ -z $1 ]]; then
         echo "Usage: diskutil eraseDisk format name [APM[Format]|[MBR[Format]|GPT[Format]] MountPoint|DiskIdentifier|DevieNode"
@@ -1964,14 +2036,14 @@ media_format_disk(){
    # local NAME="$(lsblk $DEVICE -dnpo VENDOR,MODEL,SIZE,TYPE) ($DEVICE)"
     local PARTITION=$DEVICE
 
-	if [[ $FORMAT = fat32 ]] ; then 
+	if [[ $FORMAT = fat32 ]] ; then   # need to add or fat16
 		PART_TABLE=msdos
 		PART_TYPE=primary
 		PART_NAME=
 	else
 		PART_TABLE=gpt
 		PART_TYPE=
-		PART_NAME=$NAME
+		PART_NAME=PART1     #$FORMAT
 	fi
 
 	if [[ $FORMAT = exfat ]]; then
@@ -2008,7 +2080,7 @@ media_format_disk(){
    # echo $SILENT
     
     if [[ $SILENT != -y ]]; then
-        RESULT=$(ui_yesno "ERASE MEDIA" "WARNING!!  \n\nFormat '$DEVICE' to '$FORMAT' \n\nAll existing data on '$NAME' will be erased.  \n\nAre you sure you want to continue? y/n?" "--defaultno")
+        RESULT=$(ui_yesno "ERASE MEDIA" "WARNING!!  \n\nFormat '$DEVICE' to '$FORMAT' \n\nAll existing data on '$DEVICE' will be erased.  \n\nAre you sure you want to continue? y/n?" "--defaultno")
         echo
         if [[ $RESULT != y ]]; then
             ui_msg "ERASE MEDIA" "~ $DEVICE not erased. you answered '$RESULT'" "" "" log
@@ -2032,18 +2104,21 @@ media_format_disk(){
     if  [[ $TYPE = disk ]]; then
        
         echo "Writing zeros to '$DEVICE'..."
-        run_command "sudo dd if=/dev/zero of=$DEVICE bs=512 count=4" $LINENO
+        run_command "sudo dd if=/dev/zero of=$DEVICE bs=512 count=5K" $LINENO
 
         echo "Writing new '$PART_TABLE' partition table to '$DEVICE'..."
         run_command "sudo parted -s $DEVICE mklabel $PART_TABLE" $LINENO
 
-        echo "Creating empty partition on '$DEVICE'..."
+        echo "Creating partition on '$DEVICE'..."
+     #   run_command "sudo dd if=/dev/zero of=$DEVICE bs=512 count=4" $LINENO
         run_command "sudo parted -s -a opt $DEVICE mkpart $PART_TYPE $PART_NAME $FS_TYPE 1M 100%" $LINENO
         
-        echo "Set Partition name to ..."
-        run_command "   " $LINENO
+      #  echo "Set Partition name to ..."
+        #run_command "   " $LINENO
         
         PARTITION=$DEVICE\1    
+#exit 
+        
     fi    
 
     sleep 2
@@ -2055,7 +2130,7 @@ media_format_disk(){
                 echo Installing vfat support ...
                 sudo $INSTALL dosfstools
             fi
-            run_command "sudo mkfs.vfat -F16 -v -I -n FAT16 $PARTITION" $LINENO
+            run_command "sudo mkfs.vfat -F16 -v -I -n $NAME $PARTITION" $LINENO
             ES=$?
             ;;
 
@@ -2064,7 +2139,7 @@ media_format_disk(){
                 echo Installing vfat support ...
                 sudo $INSTALL dosfstools
             fi
-            run_command "sudo mkfs.vfat -v -I -n FAT32 $PARTITION" $LINENO
+            run_command "sudo mkfs.vfat -v -I -n $NAME $PARTITION" $LINENO
             ES=$?
             ;;
             
@@ -2092,12 +2167,12 @@ media_format_disk(){
                 #sudo modprobe fuse 
                 #echo "fuse" | sudo tee -a /etc/modules
             fi  
-            run_command "sudo mkfs.ntfs -f -L NTFS $PARTITION" $LINENO
+            run_command "sudo mkfs.ntfs -f -L $NAME $PARTITION" $LINENO
             ES=$?
             ;;
         
         ext2 | ext3 | ext4)
-            run_command "sudo mkfs -t $FORMAT -L $FORMAT -E root_owner=$UID:$GID -F $PARTITION" $LINENO
+            run_command "sudo mkfs -t $FORMAT -L $NAME -E root_owner=$UID:$GID -F $PARTITION" $LINENO
             ES=$?
             ;;
             
@@ -2200,7 +2275,7 @@ media_check_target(){
     fi
     
     if [[ $(lsblk $TARGET -n -d -o TYPE) != $TYPE ]]; then
-        echo "Target '$TARGET' is not $TYPE"
+        echo "Target '$TARGET' is not type '$TYPE'"
         return 1
     fi        
 }
@@ -2216,7 +2291,7 @@ media_fix(){
     
     # if mounted, then unmount it
     if [[ ! -z $(df | grep $PARTITION) ]]; then
-        media_unmount $PARTITION
+        media_partition_unmount $PARTITION
         if (( $? )); then
             error $LINENO error unmounting
             return 1
@@ -2581,16 +2656,16 @@ media_test(){
 }
 
 
-media_rename() {
+media_filesystem_rename() {
     # changes the filesystem label.  NOT the Partition name
     
     if [[ -z $1 ]]; then
-        echo "Usage: diskutil rename[Volume] Device newName"
+        echo "Usage: diskutil rename[Filesystem] Device newName"
         echo "Example: diskutil rename /dev/sda1 NEWDISK"
         return
     fi
     
-    PARTITION=$1
+    PARTITION=$(device_fullname $1)
     NAME=$2
     
     media_check_target $PARTITION part
@@ -2598,7 +2673,7 @@ media_rename() {
         return 1
     fi
     
-    media_unmount $PARTITION
+    media_partition_unmount $PARTITION
     
     FS=$(lsblk $PARTITION -n -o FSTYPE)
     echo $FS
@@ -2610,7 +2685,7 @@ media_rename() {
         ext4)       run_command "sudo e2label $PARTITION $NAME"    ;;
     esac
     
-    media_mount $PARTITION
+    #media_partition_mount $PARTITION
     
 }
 
@@ -2963,7 +3038,7 @@ menu() {
 
 
 CMD=$1  
-TARGET=$2
+TARGET=$(device_fullname $2)
 SPECS=$3
 
 
@@ -3018,38 +3093,27 @@ case $CMD in
         exit
         ;;
 
-    umount|unmount)         media_unmount $TARGET  ;;  
+    umount|unmount)         media_filesystem_unmount $TARGET  ;;  
 
-    umountDisk|unmountDisk) media_unmountDisk $TARGET ;;
+    umountDisk|unmountDisk) media_disk_unmount $TARGET ;;
     
-    eject)
-        if [[ -z $2 ]]; then
-            echo "Usage: diskutil eject device"
-            exit
-        fi      
-        
-        media_check_target $TARGET disk
-        if (( $? )); then
-            exit 1
-        fi
-        media_unmountDisk $TARGET
-        run_command "udisksctl power-off -b $TARGET" $LINENO
-        ;;        
+    eject)                  media_disk_eject $TARGET;;
+      
 
-    mount)              media_mount $TARGET  ;;      
+    mount)              media_filesystem_mount $TARGET  ;;      
         
-    mountDisk)          media_mountDisk $TARGET;;
+    mountDisk)          media_disk_mount $TARGET;;
 
-    rename|renameVolume)             media_rename $2 $3 ;;
+    rename|renameFilesystem)    media_filesystem_rename $2 $3 ;;
     
-    verifyVolume)       media_volume_verify $TARGET  ;;
-    repairVolume)       media_volume_repair $TARGET;;
+    verify)       media_filesystem_verify $TARGET  ;;
+    repair)       media_filesystem_repair $TARGET;;
     verifyDisk)         media_disk_verify $TARGET ;; 
     repairDisk)         media_disk_repair $TARGET ;; 
     
-    eraseDisk)          media_format_disk $2 $3 $4 ;;
-    eraseVolume)        media_format_volume $2 $3 $4;;
-    reformat)           media_reformat $2;;
+    eraseDisk)          media_disk_format $2 $3 $4 ;;
+    erasePartition)     media_partition_format $2 $3 $4;;
+    reformat)           media_partition_reformat $2;;
     zeroDisk)           media_wipe $TARGET  ;;
     randomDisk)         ;;
     
