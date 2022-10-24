@@ -1452,6 +1452,56 @@ media_disk_repair() {
 }
 
 
+media_disk_repartition () {
+    if [[ -z $1 ]]; then
+        echo "Usage: disktuil partitionDisk device type"
+        return
+    fi
+    
+    local DEVICE=$1
+    local TYPE=$2
+    local NAME=$3  # or primary
+    
+    media_check_target $DEVICE disk
+    if (( $? )); then
+        exit 1
+    fi    
+    
+    
+    
+    
+    
+    
+    
+     if [[ $SILENT != -y ]]; then
+        RESULT=$(ui_yesno "ERASE MEDIA" "WARNING!!  \n\nFormat '$DEVICE' to '$FORMAT' \n\nAll existing data on '$DEVICE' will be erased.  \n\nAre you sure you want to continue? y/n?" "--defaultno")
+        echo
+        if [[ $RESULT != y ]]; then
+            ui_msg "ERASE MEDIA" "~ $DEVICE not erased. you answered '$RESULT'" "" "" log
+            return 1
+        fi
+    fi
+
+    ui_countdown 10 "ERASE MEDIA"  # "Erasing Media '$(media_name $DEVICE)' in 10 seconds...\n\n"
+    if (( $? )); then
+    # ui_msg  "INSTALL:" "$MSG" "white" "OK" "log"
+        ui_msg  "ERASE MEDIA"  "~ Erase Media stopped." "" "" log
+        return 2
+    fi   
+    
+    
+    
+    
+    echo "Writing zeros to '$DEVICE'..."
+    run_command "sudo dd if=/dev/zero of=$DEVICE bs=512 count=5K" $LINENO
+
+    echo "Writing new '$PART_TABLE' partition table to '$DEVICE'..."
+    run_command "sudo parted -s $DEVICE mklabel $PART_TABLE" $LINENO
+    
+}
+
+
+
 media_filesystem_check() {
     local PARTITION=$1
     local WAS_MOUNTED=
@@ -1927,6 +1977,25 @@ media_partition_format(){
         error $LINENO "$PARTITION is not a partition."
         exit 2
     fi
+    
+    
+ #   if [[ $SILENT != -y ]]; then
+ #       RESULT=$(ui_yesno "ERASE MEDIA" "WARNING!!  \n\nFormat '$DEVICE' to '$FORMAT' \n\nAll existing data on '$DEVICE' will be erased.  \n\nAre you sure you want to continue? y/n?" "--defaultno")
+ #       echo
+ #       if [[ $RESULT != y ]]; then
+ #           ui_msg "ERASE MEDIA" "~ $DEVICE not erased. you answered '$RESULT'" "" "" log
+ #           return 1
+ #       fi
+ #   fi
+
+    ui_countdown 10 "ERASE MEDIA"  # "Erasing Media '$(media_name $DEVICE)' in 10 seconds...\n\n"
+    if (( $? )); then
+    # ui_msg  "INSTALL:" "$MSG" "white" "OK" "log"
+        ui_msg  "ERASE MEDIA"  "~ Erase Media stopped." "" "" log
+        return 2
+    fi
+    
+    
     
     echo "Unmounting 'PARTITION'..."
     #run_command "sudo umount $DEVICE 2> /dev/null"
