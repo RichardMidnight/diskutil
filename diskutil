@@ -51,86 +51,14 @@ NEW_SIZE=
 NEW_END=
 
 
-media_unmount(){
-    local TARGET=$1
-    
-    if [[ -z $TARGET ]]; then
-        echo "Usage: diskutil umount partition"
-        return
-    fi
-    
-    media_check_target $TARGET part
-    if (( $? )); then
-        exit 1
-    fi
-    run_command "udisksctl unmount -b $TARGET" $LINENO  2>/dev/null
-    }
-    
-    
-media_unmountDisk(){
-    local TARGET=$1
-    
-    if [[ -z $TARGET ]]; then
-        echo "Usage: diskutil umountDisk device"
-        echo "Attempt to unmount all the directly-mountable volumes on the disk."
-        return
-    fi
-    
-    media_check_target $TARGET disk
-    if (( $? )); then
-        exit 1
-    fi
-    
-    PARTITION_COUNT=$(media_partition_count $TARGET)
-    
-    for ((PART=1 ; PART<=$PARTITION_COUNT; PART++)) ; do
-       run_command "udisksctl unmount -b $TARGET$PART" $LINENO  2>/dev/null
-    done    
-    }    
-    
-    
-media_mount(){
-    local TARGET=$1
-    
-    if [[ -z $TARGET ]]; then
-        echo "Usage: diskutil mount partition"
-        return
-    fi
-    
-    media_check_target $TARGET part
-    if (( $? )); then
-        exit 1
-    fi
-    run_command "udisksctl mount -b $TARGET" $LINENO 2>/dev/null
-}
-        
-media_mountDisk(){
-    local TARGET=$1
-    
-    if [[ -z $TARGET ]]; then
-        echo "Usage: diskutil mountDisk device"
-        echo "Attempts to mount all filesystems on device"
-        return
-    fi
-    
-    media_check_target $TARGET disk
-    if (( $? )); then
-        exit 1
-    fi
-   
-    PARTITION_COUNT=$(media_partition_count $TARGET)
- #  for ((i = 0 ; i <= 1000 ; i++)); do
-    
-    for ((PART=1 ; PART<=$PARTITION_COUNT; PART++)) ; do
-        run_command "udisksctl mount -b $TARGET$PART" $LINENO 2>/dev/null
-    done
-}        
+
+
         
 
 
 disk_utility_help(){
 echo "Disk Utility Tool
-Utility to manage local disks and volumes
+Utility to manage disks and partitiona
 Based on Apple's diskutil
 Most commands require an administrator or root user
 WARNING: Most destructive operations are not prompted
@@ -140,14 +68,12 @@ Usage:  diskutil [quiet] <verb> <options>, where <verb> is as follows:
      list                 (List the partitions of a disk)
      info[rmation]        (Get information on a specific disk or partition)
      listFilesystems      (List file systems available for formatting)
-     X listClients          (List all current disk management clients)
-     X activity             (Continuous log of system-wide disk arbitration)
 
-     u[n]mount            (Unmount a single volume)
-     unmountDisk          (Unmount an entire disk (all volumes))
+     u[n]mount            (Unmount a single filesystem)
+     unmountDisk          (Unmount an entire disk (all filesystems))
      eject                (Eject a disk)
-     mount                (Mount a single volume)
-     mountDisk            (Mount an entire disk (all mountable volumes))
+     mount                (Mount a single filesystem)
+     mountDisk            (Mount an entire disk (all mountable filesystems))
 
      X enableJournal        (Enable HFS+ journaling on a mounted HFS+ volume)
      X disableJournal       (Disable HFS+ journaling on a mounted HFS+ volume)
@@ -155,10 +81,10 @@ Usage:  diskutil [quiet] <verb> <options>, where <verb> is as follows:
      X enableOwnership      (Exact on-disk User/Group IDs on a mounted volume)
      X disableOwnership     (Ignore on-disk User/Group IDs on a mounted volume)
 
-     rename[Volume]       (Rename a volume)
+     rename[Volume]       (Rename a filesystem)
 
-     verifyVolume         (Verify the file system data structures of a volume)
-     repairVolume         (Repair the file system data structures of a volume)
+     verify         (Verify the file system data structures of a filesystem)
+     repair         (Repair the file system data structures of a filesystem)
      verifyDisk           (Verify the components of a partition map of a disk)
      repairDisk           (Repair the components of a partition map of a disk)
      X resetFusion          (Reset the components of a machines Fusion Drive)
@@ -850,6 +776,105 @@ bytes(){
 }
 
 
+get_bytes(){
+    # translates from bytes to human readable and vice-verse
+    # currently shows 3 significant digits.
+    local BYTES=$1
+    local OUTPUT=${2:-"-h"};  #human or bytes
+    
+    local BASE=$(echo $BYTES | tr -cd '[[:digit:]]' )
+    local SUFFIX=$(echo $BYTES | tr -cd '[[kmgtbKMGTB]]' )
+
+    
+    NUM='^[0-9]+$'
+    if ! [[ $BYTES =~ $NUM ]] ; then   # not a number   
+        return 1
+    fi
+    
+
+    # if no translation needed... then just echo the input and leave
+    if [[ $OUTPUT != "-h" ]] && [[ -z $SUFFIX ]] ; then
+        echo $BYTES
+        return
+    fi
+    
+    if [[ $OUTPUT = "-h" ]] && [[ ! -z $SUFFIX ]] ; then
+        echo $BYTES
+        return
+    fi
+
+
+    if [[ $OUTPUT = "-h" ]] ; then  # translate to human readable
+    
+        if [[ -z $SUFFIX ]]; then
+            local LEN=${#BYTES}
+            local k_ilo=1024;
+            local m_ega=$k_ilo*$k_ilo;
+            local g_iga=$m_ega*$k_ilo;
+            local t_era=$g_iga*$k_ilo;
+            local p_eta=$t_era*$k_ilo;
+            
+            [[ -z $BYTES ]] && return
+            
+            NUM='^[0-9]+$'
+            if ! [[ $BYTES =~ $NUM ]] ; then   # not a number   
+                return 1
+            fi
+            
+            case $LEN in
+                4) echo $(echo "scale=2; $BYTES/($k_ilo)" | bc)kb ;;
+                5) echo $(echo "scale=1; $BYTES/($k_ilo)" | bc)kb ;;
+                6) echo $(echo "scale=0; $BYTES/($k_ilo)" | bc)kb ;;
+                
+                7) echo $(echo "scale=2; $BYTES/($m_ega)" | bc)mb ;;
+                8) echo $(echo "scale=1; $BYTES/($m_ega)" | bc)mb ;;
+                9) echo $(echo "scale=0; $BYTES/($m_ega)" | bc)mb ;;
+                
+                10) echo $(echo "scale=2; $BYTES/($g_iga)" | bc)gb ;;
+                11) echo $(echo "scale=1; $BYTES/($g_iga)" | bc)gb ;;
+                12) echo $(echo "scale=0; $BYTES/($g_iga)" | bc)gb ;;
+                
+                13) echo $(echo "scale=2; $BYTES/($t_era)" | bc)tb ;;
+                14) echo $(echo "scale=1; $BYTES/($t_era)" | bc)tb ;;
+                15) echo $(echo "scale=0; $BYTES/($t_era)" | bc)tb ;;
+                *)  echo $BYTES ;;
+            esac
+        else
+            echo $BYTES
+        fi    
+
+    else  # translate to bytes
+    
+        case $SUFFIX in
+
+        b|B|"")
+            echo $BASE
+            ;;
+        
+        k|K|kb|KB)
+            echo $(($BASE*1024))
+            ;;
+
+        m|M|mb|MB)
+            echo $(($BASE*1024*1024))
+            ;;
+            
+        g|G|gb|GB)
+            echo $(($BASE*1024*1024*1024))
+            ;;
+            
+        t|T|tb|TB)
+            echo $(($BASE*1024*1024*1024*2014))
+            ;;
+        *)
+            ui_error $LINENO "bad byte suffix 'SUFFIX'"
+            ;;
+    
+        esac
+    fi
+}
+
+
 
 
 info_get(){
@@ -1131,6 +1156,83 @@ info_echo(){
 }
 
 
+media_mount(){
+    local TARGET=$1
+    
+    if [[ -z $TARGET ]]; then
+        echo "Usage: diskutil mount partition"
+        return
+    fi
+    
+    media_check_target $TARGET part
+    if (( $? )); then
+        exit 1
+    fi
+    run_command "udisksctl mount -b $TARGET" $LINENO 2>/dev/null
+}
+        
+        
+media_mountDisk(){
+    local TARGET=$1
+    
+    if [[ -z $TARGET ]]; then
+        echo "Usage: diskutil mountDisk device"
+        echo "Attempts to mount all filesystems on device"
+        return
+    fi
+    
+    media_check_target $TARGET disk
+    if (( $? )); then
+        exit 1
+    fi
+   
+    PARTITION_COUNT=$(media_partition_count $TARGET)
+ #  for ((i = 0 ; i <= 1000 ; i++)); do
+    
+    for ((PART=1 ; PART<=$PARTITION_COUNT; PART++)) ; do
+        run_command "udisksctl mount -b $TARGET$PART" $LINENO 2>/dev/null
+    done
+}        
+
+
+media_unmount(){
+    local TARGET=$1
+    
+    if [[ -z $TARGET ]]; then
+        echo "Usage: diskutil umount partition"
+        return
+    fi
+    
+    media_check_target $TARGET part
+    if (( $? )); then
+        exit 1
+    fi
+    run_command "udisksctl unmount -b $TARGET" $LINENO  2>/dev/null
+    }
+    
+    
+media_unmountDisk(){
+    local TARGET=$1
+    
+    if [[ -z $TARGET ]]; then
+        echo "Usage: diskutil umountDisk device"
+        echo "Attempt to unmount all the directly-mountable volumes on the disk."
+        return
+    fi
+    
+    media_check_target $TARGET disk
+    if (( $? )); then
+        exit 1
+    fi
+    
+    PARTITION_COUNT=$(media_partition_count $TARGET)
+    
+    for ((PART=1 ; PART<=$PARTITION_COUNT; PART++)) ; do
+       run_command "udisksctl unmount -b $TARGET$PART" $LINENO  2>/dev/null
+    done    
+    }    
+
+
 media_name(){
     #lsblk -dpnlo NAME,VENDOR,MODEL,SIZE $1  2> /dev/null
     local VEN_MOD=$(lsblk -dpnlo VENDOR,MODEL $1  2> /dev/null | sed 's/  */ /g')
@@ -1205,10 +1307,12 @@ media_volume_verify() {
         return 1
     fi
     
-    run_command "sudo fsck -V -M -n $VOLUME"
+    # -v=verbose -f=force -n=nochanges
+    run_command "sudo fsck -v -f -n $VOLUME"
     
-    run_command "sudo badblocks -s -v $VOLUME"
+    # run_command "sudo badblocks -s -v $VOLUME"
 }
+
 
 media_volume_repair() {
     local VOLUME=$1
@@ -1223,9 +1327,10 @@ media_volume_repair() {
         return 1
     fi
     
-    run_command "sudo fsck -V -M -y $VOLUME"
+    # -v=verbose -f=force -p=automatic repair
+    run_command "sudo fsck -v -f $VOLUME"
     
-    run_command "sudo badblocks -s -v $VOLUME"
+    #run_command "sudo badblocks -s -v $VOLUME"
     
     
     # e2fsck -f -y -v -C 0 '/dev/sda2'
@@ -1246,15 +1351,16 @@ media_disk_verify() {
         error $LINENO "Disk $DISK does not exist."
         return 1
     fi
+    
+    run_command "sudo parted $DISK print" $LINENO
         
-    PARTITION_COUNT=$(media_partition_count $TARGET)
+   # PARTITION_COUNT=$(media_partition_count $TARGET)
+   # echo "Checking $PARTITION_COUNT Partitions..."
+   # for ((PART=1 ; PART<=$PARTITION_COUNT; PART++)) ; do
+   #    run_command "sudo fsck -M -V $DISK$PART" $LINENO  2>/dev/null
+   # done   
     
-    echo "Checking $PARTITION_COUNT Partitions..."
-    for ((PART=1 ; PART<=$PARTITION_COUNT; PART++)) ; do
-       run_command "sudo fsck -M -V $DISK$PART" $LINENO  2>/dev/null
-    done   
-    
-    run_command "sudo badblocks -s -v $DISK"
+   # run_command "sudo badblocks -s -v $DISK"
     
 }
 
@@ -1273,14 +1379,15 @@ media_disk_repair() {
         return 1
     fi
 
-    PARTITION_COUNT=$(media_partition_count $TARGET)
     
-    echo "repairing $PARTITION_COUNT Partitions..."
-    for ((PART=1 ; PART<=$PARTITION_COUNT; PART++)) ; do
-       run_command "sudo fsck -M -V -y $DISK$PART" $LINENO  2>/dev/null
-    done  
+    run_command "testdisk $DISK" $LINENO
 
-    run_command "sudo badblocks -s -v $DISK"
+    #PARTITION_COUNT=$(media_partition_count $TARGET)
+    #echo "repairing $PARTITION_COUNT Partitions..."
+    #for ((PART=1 ; PART<=$PARTITION_COUNT; PART++)) ; do
+    #   run_command "sudo fsck -M -V -y $DISK$PART" $LINENO  2>/dev/null
+    #done  
+    #run_command "sudo badblocks -s -v $DISK"
 }
 
 
@@ -1452,6 +1559,7 @@ media_partition_count(){
     
     return $partnum
 }
+
 
 media_partition_resize(){
     local PARTITION=$1
@@ -1695,104 +1803,6 @@ echo SIZE="'$SIZE'"
     esac
 }
 
-
-get_bytes(){
-    # translates from bytes to human readable and vice-verse
-    # currently shows 3 significant digits.
-    local BYTES=$1
-    local OUTPUT=${2:-"-h"};  #human or bytes
-    
-    local BASE=$(echo $BYTES | tr -cd '[[:digit:]]' )
-    local SUFFIX=$(echo $BYTES | tr -cd '[[kmgtbKMGTB]]' )
-
-    
-    NUM='^[0-9]+$'
-    if ! [[ $BYTES =~ $NUM ]] ; then   # not a number   
-        return 1
-    fi
-    
-
-    # if no translation needed... then just echo the input and leave
-    if [[ $OUTPUT != "-h" ]] && [[ -z $SUFFIX ]] ; then
-        echo $BYTES
-        return
-    fi
-    
-    if [[ $OUTPUT = "-h" ]] && [[ ! -z $SUFFIX ]] ; then
-        echo $BYTES
-        return
-    fi
-
-
-    if [[ $OUTPUT = "-h" ]] ; then  # translate to human readable
-    
-        if [[ -z $SUFFIX ]]; then
-            local LEN=${#BYTES}
-            local k_ilo=1024;
-            local m_ega=$k_ilo*$k_ilo;
-            local g_iga=$m_ega*$k_ilo;
-            local t_era=$g_iga*$k_ilo;
-            local p_eta=$t_era*$k_ilo;
-            
-            [[ -z $BYTES ]] && return
-            
-            NUM='^[0-9]+$'
-            if ! [[ $BYTES =~ $NUM ]] ; then   # not a number   
-                return 1
-            fi
-            
-            case $LEN in
-                4) echo $(echo "scale=2; $BYTES/($k_ilo)" | bc)kb ;;
-                5) echo $(echo "scale=1; $BYTES/($k_ilo)" | bc)kb ;;
-                6) echo $(echo "scale=0; $BYTES/($k_ilo)" | bc)kb ;;
-                
-                7) echo $(echo "scale=2; $BYTES/($m_ega)" | bc)mb ;;
-                8) echo $(echo "scale=1; $BYTES/($m_ega)" | bc)mb ;;
-                9) echo $(echo "scale=0; $BYTES/($m_ega)" | bc)mb ;;
-                
-                10) echo $(echo "scale=2; $BYTES/($g_iga)" | bc)gb ;;
-                11) echo $(echo "scale=1; $BYTES/($g_iga)" | bc)gb ;;
-                12) echo $(echo "scale=0; $BYTES/($g_iga)" | bc)gb ;;
-                
-                13) echo $(echo "scale=2; $BYTES/($t_era)" | bc)tb ;;
-                14) echo $(echo "scale=1; $BYTES/($t_era)" | bc)tb ;;
-                15) echo $(echo "scale=0; $BYTES/($t_era)" | bc)tb ;;
-                *)  echo $BYTES ;;
-            esac
-        else
-            echo $BYTES
-        fi    
-
-    else  # translate to bytes
-    
-        case $SUFFIX in
-
-        b|B|"")
-            echo $BASE
-            ;;
-        
-        k|K|kb|KB)
-            echo $(($BASE*1024))
-            ;;
-
-        m|M|mb|MB)
-            echo $(($BASE*1024*1024))
-            ;;
-            
-        g|G|gb|GB)
-            echo $(($BASE*1024*1024*1024))
-            ;;
-            
-        t|T|tb|TB)
-            echo $(($BASE*1024*1024*1024*2014))
-            ;;
-        *)
-            ui_error $LINENO "bad byte suffix 'SUFFIX'"
-            ;;
-    
-        esac
-    fi
-}
 
 
 
