@@ -92,14 +92,14 @@ Usage:  diskutil [quiet] <verb> <options>, where <verb> is as follows:
      X resetFusion        (Reset the components of a machines Fusion Drive)
 
      eraseDisk            (Erase an existing disk, removing all partitions and data)
-     erasePartition          (Erase an existing volume)
+     erasePartition       (Erase an existing partition)
      reformat             (Erase an existing volume with same name and type)
      X eraseOptical         (Erase optical media (CD/RW, DVD/RW, etc.))
      zeroDisk             (Erase a disk, writing zeros to the media)
      randomDisk           (Erase a disk, writing random data to the media)
      secureErase          (Securely erase a disk or freespace on a volume)
 
-     partitionDisk        ((re)Partition a disk, removing all volumes)
+     X partitionDisk        ((re)Partition a disk, removing all volumes)
      addPartition         (Create a new partition to occupy free space)
      X splitPartition       (Split an existing partition into two or more)
      X mergePartitions      (Combine two or more existing partitions into one)
@@ -1331,7 +1331,7 @@ fi
 }
 
 
-media_filesystem_verify() {
+media_filesystem_verifyXX() {
     local PARTITION=$(device_fullname $1)
     
     if [[ -z $PARTITION ]]; then
@@ -1379,7 +1379,7 @@ media_filesystem_repair() {
    # fi
     
     # -v=verbose -f=force -p=automatic repair
-    run_command "sudo fsck -v -p $PARTITION"
+    run_command "sudo fsck -M -v -p $PARTITION"
     
     #run_command "sudo badblocks -s -v $v"
     
@@ -1452,25 +1452,26 @@ media_disk_repair() {
 }
 
 
-media_disk_repartition () {
+media_disk_partition () {
     if [[ -z $1 ]]; then
-        echo "Usage: disktuil partitionDisk device type"
+        echo "Usage: disktuil partitionDisk device type filesystem [name] [size]"
+        echo "type is: gpt | msdos | mac"
+        echo "filesystem is: fat16 fat32 exfat ntfs ext2 ext3 ext4 free"
+        echo "Example: diskutil partitionDisk sda gpt"
+        eche "Note: this does not work"
         return
     fi
     
     local DEVICE=$1
     local TYPE=$2
-    local NAME=$3  # or primary
+    local FILESYSTEM=$3
+    local NAME=${4:-$(media_size $DEVICE -h)} 
+    local SIZE=${5:-100%} 
     
     media_check_target $DEVICE disk
     if (( $? )); then
         exit 1
     fi    
-    
-    
-    
-    
-    
     
     
      if [[ $SILENT != -y ]]; then
@@ -1490,13 +1491,14 @@ media_disk_repartition () {
     fi   
     
     
-    
+exit    
     
     echo "Writing zeros to '$DEVICE'..."
     run_command "sudo dd if=/dev/zero of=$DEVICE bs=512 count=5K" $LINENO
 
     echo "Writing new '$PART_TABLE' partition table to '$DEVICE'..."
     run_command "sudo parted -s $DEVICE mklabel $PART_TABLE" $LINENO
+    
     
 }
 
@@ -2087,8 +2089,8 @@ media_disk_format(){
     
     if [[ -z $1 ]]; then
         echo "Usage: diskutil eraseDisk format name [APM[Format]|[MBR[Format]|GPT[Format]] MountPoint|DiskIdentifier|DevieNode"
-        echo Example: diskutil eraseDisk JHFS+ UntitledUFS /dev/disk3
-        echo Example: diskutil eraseDisk EXFAT NEWDISK /dev/sda
+        echo Example: diskutil eraseDisk ntfs Untitled /dev/disk3
+        echo Example: diskutil eraseDisk exfat NEWDISK /dev/sda
         return
     fi
     
@@ -2097,7 +2099,7 @@ media_disk_format(){
 
     local FORMAT=${1:-"fat32"}    # fat16, fat32, exfat, ntfs, ext2, ext3, ext4
     local NAME=$2
-    local DEVICE=$3
+    local DEVICE=$(device_fullname $3)
     #local SILENT=${3:-"-n"}
     
     local ROOT="$(env_root_device)"
@@ -2105,7 +2107,9 @@ media_disk_format(){
    # local NAME="$(lsblk $DEVICE -dnpo VENDOR,MODEL,SIZE,TYPE) ($DEVICE)"
     local PARTITION=$DEVICE
 
-	if [[ $FORMAT = fat32 ]] ; then   # need to add or fat16
+#echo ${FORMAT:0:3}
+
+	if [[ ${FORMAT:0:3} = fat ]] ; then   # need to add or fat16
 		PART_TABLE=msdos
 		PART_TYPE=primary
 		PART_NAME=
@@ -2180,13 +2184,20 @@ media_disk_format(){
 
         echo "Creating partition on '$DEVICE'..."
      #   run_command "sudo dd if=/dev/zero of=$DEVICE bs=512 count=4" $LINENO
-        run_command "sudo parted -s -a opt $DEVICE mkpart $PART_TYPE $PART_NAME $FS_TYPE 1M 100%" $LINENO
+     
+        # need to limit size to 4G if fat16    
+        if [[ $FS_TYPE = fat16 ]] && [[ $(media_size $DEVICE) -gt $(get_bytes 4G) ]]; then
+            SIZE=4G
+        else
+            SIZE=100%
+        fi           
+
+        run_command "sudo parted -s -a opt $DEVICE mkpart $PART_TYPE $PART_NAME $FS_TYPE 1M $SIZE" $LINENO
         
       #  echo "Set Partition name to ..."
         #run_command "   " $LINENO
         
         PARTITION=$DEVICE\1    
-#exit 
         
     fi    
 
@@ -2222,7 +2233,7 @@ media_disk_format(){
                 #echo "fuse" | sudo tee -a /etc/modules
             fi    
             # the -L is Label
-            run_command "sudo mkfs.exfat -L $NAME $PARTITION" $LINENO
+            run_command "sudo mkfs.exfat -n $NAME $PARTITION" $LINENO
             ES=$?
             ;;      
         
@@ -3157,7 +3168,7 @@ case $CMD in
     listFilesystems)
         echo "Formattable file systems"
         echo
-        echo "FAT16, FAT32, EXFAT, NTFS, EXT2, EXT3, EXT4"
+        echo "fat16, fat32, exfat, ntfs, ext2, ext3, ext4, free"
         
         exit
         ;;
@@ -3175,7 +3186,7 @@ case $CMD in
 
     rename|renameFilesystem)    media_filesystem_rename $2 $3 ;;
     
-    verify)       media_filesystem_verify $TARGET  ;;
+    verify)       media_filesystem_check $TARGET  ;;
     repair)       media_filesystem_repair $TARGET;;
     verifyDisk)         media_disk_verify $TARGET ;; 
     repairDisk)         media_disk_repair $TARGET ;; 
@@ -3186,7 +3197,7 @@ case $CMD in
     zeroDisk)           media_wipe $TARGET  ;;
     randomDisk)         ;;
     
-    partitionDisk)      ;;
+    partitionDisk)      media_disk_partition $2 $3 $4 $5 $6;;
     addPartition)       media_partition_add $2 $3 $4;;
     resizeVolume)       
         media_check_target $TARGET part
