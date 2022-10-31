@@ -101,7 +101,7 @@ Usage:  diskutil [quiet] <verb> <options>, where <verb> is as follows:
      randomDisk           (Erase a disk, writing random data to the media)
      secureErase          (Securely erase a disk)
 
-     createPartitionTable
+     createPartitionTable   (Erase the partition table and create a new one)
      X partitionDisk        ((re)Partition a disk, removing all volumes)
      addPartition         (Create a new partition to occupy free space)
      delPartition         (Delete a partition)
@@ -945,28 +945,24 @@ info_get(){
         return 6
     fi
     parted_free_output="$(sudo parted -ms "$DEVICE" unit B print free)"
-    
     DEVICE_SIZE="$(echo "$parted_output" | grep $DEVICE | cut -d ':' -f 2 | tr -d 'B')"
     PART_TABLE="$(echo "$parted_output" | grep $DEVICE | cut -d ':' -f 6 | tr -d 'B')"
     PART_START="$(echo "$parted_output" | grep ^$PARTNUM: | cut -d ':' -f 2 | tr -d 'B')"
     PART_END="$(echo "$parted_output" | grep ^$PARTNUM: | cut -d ':' -f 3 | tr -d 'B')"
     PART_SIZE="$(echo "$parted_output" | grep ^$PARTNUM: | cut -d ':' -f 4 | tr -d 'B')"
-
     if [ -z "$(sudo parted -s "$DEVICE" unit B print | grep "$PART_START" | grep logical)" ]; then
         PART_TYPE="primary"
     else
         PART_TYPE="logical"
     fi
-    
-    FILESYSTEM="$( echo "$parted_output" | grep ^$PARTNUM: | cut -d ':' -f 5 )"
-   
-    
+    FILESYSTEM="$(echo "$parted_output" | grep ^$PARTNUM: | cut -d ':' -f 5 )"
     PART_FREE="$(echo "$parted_free_output" | grep $PART_START -A 1 | grep -v  $PART_START | grep free | cut -d ':' -f 3 | tr -d 'B')"
     if [ -z $PART_FREE ]; then
         PART_MAX=$PART_END
     else
         PART_MAX=$PART_FREE
     fi
+    
     
     echo_green partition_info OK
     
@@ -1824,9 +1820,15 @@ exit
 
 
 media_disk_delpartition(){
-    local DEVICE=$(device_fullname $1)
-    local PART_NO=$2
+    local PART_NO=$1
+    local DEVICE=$(device_fullname $2)
     local SILENT=$3
+    
+    if [[ -z $1 ]]; then
+        echo "Usage: disktuil delPartition device partition [-s]"
+        echo "Example: diskutil delPartition sda 1"
+        return
+    fi
     
     
     if [[ $SILENT != -y ]]; then
@@ -2027,12 +2029,26 @@ media_partition_count(){
 }
 
 
-media_partition_resize(){
+retire_media_partition_resize(){
     local PARTITION=$1
     local BEG_BYTE=$2  
     local END_BYTE=$3   # or min or maxst run using both the -n and 
     local DEVICE
     local SIZE_BYTES=$(( $END_BYTE - $BEG_BYTE ))
+    
+# to disable... this just runs     
+return 1    
+    
+        media_check_target $TARGET part
+        if (( $? )); then
+            exit 1
+        fi       
+  
+  #      media_partition_resize $TARGET $SPECS
+  #      media_partition_verify $TARGET    
+    
+    
+    
     
     if [ "$FILESYSTEM" = "fat16" ] || [ "$FILESYSTEM" = "fat32" ]; then
         echo fat partitions resize with the filesystem.  exiting.
@@ -2099,16 +2115,13 @@ echo "FS.................='$FS'"
     fi
 
 
-# sleep 2
-#run_command "sudo parted $DEVICE resizepart $PARTNUM $END_BYTE'b' -s" $LINENO
 run_command "sudo parted $DEVICE unit B resizepart $PARTNUM $END_BYTE" $LINENO
-
-#echo running "yes | sudo parted $DEVICE unit B resizepart $PARTNUM $END_BYTE"  $LINENO
-
-#yes | sudo parted $DEVICE unit B resizepart $PARTNUM $END_BYTE
 
 return
 
+
+
+#old way...
    
     #delete partition
     echo Delete partition...
@@ -2151,34 +2164,110 @@ media_filesystem_resize(){
     local PARTITION=$1
     local SIZE=$2  # min max bytes
     
+    local FS_TYPE=$(  )   
     echo
     echo_white "Resize filesystem..."
     
-echo SIZE="'$SIZE'"
+
+    
+    
+    
+    # get file system type
+    if [ -z "$(echo $PARTITION | grep p)" ] ;then
+        DEVICE=$(echo $PARTITION | sed 's/[1-9]*//g')
+    else
+        DEVICE=$(echo $PARTITION | sed 's/p[1-9]*//g')
+    fi
+    
+    PARTNUM=$(echo $PARTITION | sed 's/.*[^0-9]\(.*\)$/\1/')
+    
+    if [ ! -e "$DEVICE" ]; then
+        error $LINENO "Device '$DEVICE' does not exist"
+        return 1
+    fi 
+
+    if [ ! -e "$DEVICE$PARTNUM" ]; then
+        error $LINENO "PARTITION '$DEVICE$PARTNUM' does not exist"
+        return 1
+    fi 
+    
+    FS_TYPE=$(sudo parted -ms "$DEVICE" unit B print free |  grep -v $DEVICE | grep -v free | grep ^$PARTNUM: | cut -d ':' -f 5 )
+    if (( -z $FS_TYPE )); then
+        FS_TYPE=exfat
+    fi
+  
+  
+  
+    # get current fs size
+    case $FS_TYPE in
+        fat16|fat32)
+            FS_SIZE=$(sudo fatresize -i  $PARTITION | grep Cur | cut -d: -f2 | sed 's/ //g')
+            FS_MIN=
+            FS_MAX=
+            ;;
+        
+        exfat)
+            FS_SIZE=$(sudo fsck.exfat  $PARTITION | grep Volume | cut -d : -f2 | sed 's/Volume size//g' | sed 's/ //g')
+            FS_SIZE=$(get_bytes $FS_SIZE)
+            FS_MIN=
+            FS_MAX=
+            ;;
+        
+        ntfs)
+            FS_SIZE=$(sudo ntfsresize -i  $PARTITION | grep "Current device" | cut -d: -f2 | cut -d" " -f2 | sed 's/ //g')
+            FS_MIN=
+            FS_MAX=
+            ;;
+        
+        ext2|ext3|ext4)
+            FS_BLOCKS=$(sudo tune2fs -l $PARTITION |  grep '^Block count:' | tr -d ' ' | cut -d ':' -f 2)
+            FS_BLOCKSIZE=$(sudo tune2fs -l $PARTITION |  grep '^Block size:' | tr -d ' ' | cut -d ':' -f 2)
+            FS_SIZE=$(($FS_BLOCKS*$FS_BLOCKSIZE))
+            FS_MIN=
+            FS_MAX=
+            ;;
+        
+        *)
+            echo Unsupported file system '$FS_TYPE' ;;
+    esac
+  
+  
+  
+  
+  
+  
+  
+  
+  echo SIZE="'$SIZE'"
     
     case $SIZE in
         min)
             EXT4_SIZE="$(($NEW_SIZE / 1024))K"
             NTFS_SIZE="-s $NEW_SIZE"
+            EXFAT_SIZE="-s $NEW_SIZE "
             FAT_SIZE="-s $NEW_SIZE"
             ;;
             
         max)
             EXT4_SIZE=
             NTFS_SIZE="-s $NEW_SIZE"
+            EXFAT_SIZE="-s max "
             FAT_SIZE="-s $NEW_SIZE"
             ;;
             
         *)
             EXT4_SIZE="$((SIZE / 1024))K"
             NTFS_SIZE="-s $SIZE"
+            EXFAT_SIZE=" "
             FAT_SIZE="-s $SIZE"
             ;;
     esac 
-    
+  
+  
+  
   
     
-    case $FILESYSTEM in
+    case $FS_TYPE in
     
         ext2|ext3|ext4)
             echo
@@ -2206,9 +2295,20 @@ echo SIZE="'$SIZE'"
             sleep 2
             ;;
         
-        fat32)
+        fat16|fat32)
             echo
             echo_white "Resizing fat filesystem '$FAT_SIZE'...line ($LINENO)"
+            run_command "sudo fatresize -p -s $FAT_SIZE $PARTITION" $LINENO
+            if (( $? )); then
+              return 1
+            fi   
+            sleep 2
+            run_command "sudo fatresize -i $PARTITION" $LINENO
+            ;;
+        
+        exfat)
+            echo
+            echo_white "Resizing exfat filesystem '$EXFAT_SIZE'...line ($LINENO)"
             #echo_blue fatresize -p "$FAT_SIZE" "$PARTITION"
             run_command "sudo fatresize -p $FAT_SIZE $PARTITION" $LINENO
             rc=$?
@@ -2221,7 +2321,9 @@ echo SIZE="'$SIZE'"
             echo
             
             run_command "sudo fatresize -i $PARTITION" $LINENO
-            ;;
+            ;;            
+            
+            
                 
         ntfs)
             echo
@@ -2277,6 +2379,7 @@ echo SIZE="'$SIZE'"
        *)
             error $LINENO.
             ;;
+            
     esac
 }
 
@@ -2434,6 +2537,7 @@ media_partition_reformat(){
     media_partition_format $FS "$NAME" $PARTITION
 }
 
+
 media_disk_format(){
     
     if [[ -z $1 ]]; then
@@ -2515,8 +2619,7 @@ media_disk_format(){
   
     # mount the drive with udisksctl if installed
     media_filesystem_mount $DEVICE\1
-    
-    
+
 }
 
 media_disk_formatxx(){
@@ -3218,13 +3321,14 @@ media_filesystem_rename() {
 
 
 
-resize(){
+retire_media_partition_resize2(){
     # need ntfsresize and fatresize
     # sudo apt install fatresize
 
     PARTITION=$1
     SIZE=$2
     #SIZE=$(bytes $2 -b)
+
 
     
    if [ ! -e "$PARTITION" ]; then
@@ -3600,14 +3704,7 @@ case $CMD in
     createPartitionTable)   media_disk_createpartitiontable $2 $3 $4  ;;
     addPartition)           media_disk_addpartition $2 $3 $4 $5 $6 ;;
     delPartition)           media_disk_delpartition $2 $3 $4 $5 $6 ;;
-    resizeVolume)       
-        media_check_target $TARGET part
-        if (( $? )); then
-            exit 1
-        fi       
-        resize $TARGET $SPECS
-        media_volume_verify $TARGET
-        ;;
+    resizeFilesystem)       media_filesystem_resize $2 $3 $4 ;;
             
     clone)
         SOURCE=$1
