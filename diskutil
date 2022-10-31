@@ -1262,7 +1262,7 @@ media_disk_addpartition(){
   
     if [[ -z $1 ]]; then
         echo "Usage: diskutil addPartition format name size device"
-        echo "  Format is: fat16 | fat32 | exfat | ntfs | ext2 | ext3 | ext4"
+        echo "  Format is: fat16 | fat32 | exfat | ntfs | ext2 | ext3 | ext4" | linux-swap
         echo Example: diskutil addPartition ntfs Untitled 2G /dev/disk3
         echo Example: diskutil addPartition exfat NEWDISK 3G sda
         return
@@ -1463,6 +1463,11 @@ echo new_end=$END
         ext2 | ext3 | ext4)
             run_command "sudo mkfs -t $FORMAT -L '$NAME' -E root_owner=$UID:$GID -F $NEW_PARTITION" $LINENO
             ES=$?
+            ;;
+            
+        linux-swap)
+            run_command "sudo mkswap -L '' $NEW_PARTITION" $LINENO
+             ES=$?
             ;;
             
         *)
