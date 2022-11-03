@@ -9,7 +9,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.1"
+VER="0.1.2"
 BACKTITLE="Disk Utility"
 
 SETTINGS="/home/$USER/.config/$SCRIPTNAME/$SCRIPTNAME.conf"
@@ -791,10 +791,10 @@ info_get(){
     #Gather info
     echo_white "Gathering partition info..."
 
-    DEVICE=$(media_device_fullname $PARTITION)
+    DEVICE=$(media_device_name $PARTITION)
     PARTNUM=$(media_device_partnum $PARTITION)
    
-    media_device_checktarget $DEVICE$PARTNUM PART
+    media_device_checktarget $PARTITION part
     if (( $? )); then return 1; fi 
     
     DEVICE_SIZE=$(media_device_size $PARTITION)
@@ -891,50 +891,38 @@ echo $PARTITION
 
 
 info_echo(){
+    local DEVICE=$1
+    
+    media_device_checktarget $DEVICE part
+    if (( $? )); then return 1; fi
+    
     echo
-    echo "=======   VARIABLES ============"
+    echo "=======   FS INFO   ============"
     echo "DEVICE       = '$DEVICE'"
-    echo "DEVICE_SIZE  = $(bytes $DEVICE_SIZE -h)      '$DEVICE_SIZE' "
-    echo "Partition tbl= $PART_TABLE "
+    echo "DEVICE_SIZE  = $(bytes $(media_device_size $DEVICE) -h)      '$(media_device_size $DEVICE)' " 
+    echo "Partition tbl= $(media_device_partition_table $DEVICE) "  
     echo
-    echo "PARTITION    = '$PARTITION'"
-    echo "PARTNUM      = '$PARTNUM'"
-    echo "PART_TYPE    = '$PART_TYPE'"
-    echo
- #   echo "BUFFER       = $(bytes $BUFFER -h)      '$BUFFER' "
- #   echo
- #   echo "FS_TYPE       = $FS_TYPE"
-    echo "PART_START   = $(bytes $PART_START -h)      '$PART_START' "
-    echo "PART_END     = $(bytes $PART_END -h)      '$PART_END'  "
-    echo_white "PART_SIZE    = $(bytes $PART_SIZE -h)      '$PART_SIZE'  $(($PART_SIZE/1024/1024))M  ($(($PART_SIZE-$PART_END+$PART_START)) b larger than calc)"
-#echo_white "PART_SIZE    = $(bytes $PART_SIZE -h)      '$PART_SIZE'  $(($PART_SIZE/1024/1024))M  ($(($PART_END-$PART_START)) b larger than calc)"
-  #  echo "calc         = '$(($PART_END -$PART_START))'  ($(($PART_SIZE-$PART_END+$PART_START)) b smaller than size) "
-    echo "PART_MAX     = $(bytes $PART_MAX -h)      '$PART_MAX'  "
-    echo
-    echo "FILESYSTEM   =" $FILESYSTEM
+    echo "PARTITION    = '$(media_device_fullname $DEVICE)'" 
+    echo "PARTNUM      = '$(media_device_partnum $DEVICE)'"  
 
-    if [ ! -z $FS_SIZE ]; then
-        echo_white "FS_SIZE      = $(bytes $FS_SIZE -h)      '$FS_SIZE' $(($FS_SIZE/1024/1024))M  ($(($PART_SIZE-$FS_SIZE)) b smaller than partition)"
-    else
-        echo_white "FS_SIZE      = $(bytes $FS_SIZE -h) "
-    fi
+    echo
+    echo "PART_START   = $(bytes $(media_partition_start $DEVICE) -h)      '$(media_partition_start $DEVICE)' "   
+    echo "PART_END     = $(bytes $(media_partition_end $DEVICE) -h)      '$(media_partition_end $DEVICE)'  "          
+    local diff=$(( $(media_partition_size $DEVICE) - $(media_partition_end $DEVICE)  + $(media_partition_start $DEVICE)  ))   # (($PART_SIZE-$PART_END+$PART_START))
+    echo_white "PART_SIZE    = $(bytes $(media_partition_size $DEVICE) -h)      '$(media_partition_size $DEVICE)'   ($diff b larger than calc)"
+    echo "PART_MAX     = $(bytes $(media_partition_max $DEVICE) -h)      '$(media_partition_max $DEVICE)'  "
 
-    
-    echo "FS_MIN       = $(bytes $FS_MIN -h)      '$FS_MIN'    "  
-   # echo "FS_END        = '$FS_END'"   
-    #echo "DIFF          =" $(( PART_END - $FS_END ))
-    #echo "Note: NTFS fs will be 3584 b smaller than partition"
-    
-    echo 
-    echo "MIN_SIZE     = $(bytes $MIN_SIZE -h)      '$MIN_SIZE' "
-    echo "MIN_END      = $(bytes $MIN_END -h)      '$MIN_END' "
-    echo "MAX_SIZE     = $(bytes $MAX_SIZE -h)      '$MAX_SIZE' "
-    echo "MAX_END      = $(bytes $MAX_END -h)      '$MAX_END' "
     echo
-    echo
-    echo "NEW_SIZE     = $(bytes $NEW_SIZE -h)      '$NEW_SIZE' " 
-    echo "NEW_END      = $(bytes $NEW_END -h)      '$NEW_END' "
-    echo "==================="   
+    echo "FS_TYPE      = $(media_filesystem_fs_type $DEVICE)"        
+    local diff=$(($(media_partition_size $DEVICE) - $(media_filesystem_size $DEVICE)))
+    echo_white "FS_SIZE      = $(bytes $(media_filesystem_size $DEVICE) -h)      '$(media_filesystem_size $DEVICE)'   ($diff b smaller than partition)"   
+    echo "FS_MIN       = $(bytes $(media_filesystem_min $DEVICE) -h)      '$(media_filesystem_min $DEVICE)'    "    
+    
+    
+   # echo
+   # echo "NEW_SIZE     = $(bytes $NEW_SIZE -h)      '$NEW_SIZE' " 
+   # echo "NEW_END      = $(bytes $NEW_END -h)      '$NEW_END' "
+   # echo "==================="   
 }
 
 
@@ -1361,7 +1349,7 @@ media_filesystem_size(){
             ;;     
             
         ntfs)
-            sudo ntfsfix -d $PARTITION
+            #sudo ntfsfix -d $PARTITION
             FS_SIZE=$(sudo ntfsresize -i "$PARTITION" | grep "Current volume size:" | cut -d : -f2 | cut -d "b" -f1 | sed 's/ //g')
             ;;
             
@@ -1376,15 +1364,27 @@ media_filesystem_size(){
 media_filesystem_min(){  
     local PARTITION=$(media_device_fullname $1)
     local FS_TYPE=$(media_filesystem_fs_type $PARTITION)
+    local FS_MIN
+    local blocksize
+    local minsize
      
      case $FS_TYPE in
-        ext2|ext3|ext4)       
-           # blockcount="$(sudo tune2fs -l "$PARTITION" | grep '^Block count:' | tr -d ' ' | cut -d ':' -f 2)"
-            blocksize="$(sudo tune2fs -l "$PARTITION" | grep '^Block size:' | tr -d ' ' | cut -d ':' -f 2)"
-           # if [[ $(is_number $currentsize) ]] && [[ $(is_number $blocksize) ]]; then
-            #    FS_SIZE=$(($blockcount * $blocksize))
-           # fi
+     
+        fat32)
+           FS_MIN=$(sudo fatresize -i "$PARTITION" | grep Min | cut -d : -f2 | sed 's/ //g')
+            ;;
+             
+        exfat)
+            FS_MIN=$(sudo fsck.exfat  "$PARTITION" | grep Used | sed 's/  */ /g' | cut -d' ' -f3-4 | sed 's/ //g')
+            ;;     
             
+        ntfs)
+            #sudo ntfsfix -d $PARTITION
+            FS_MIN=$(sudo ntfsresize -i "$PARTITION" | grep "resize at" | cut -d t -f 3 | cut -d b -f1 | sed 's/ //g') 
+            ;; 
+     
+        ext2|ext3|ext4)       
+            blocksize="$(sudo tune2fs -l "$PARTITION" | grep '^Block size:' | tr -d ' ' | cut -d ':' -f 2)"
             minsize=$(sudo resize2fs -P "$PARTITION" | grep minimum | cut -d: -f2 | sed 's/ //g')
             if ! (( $minsize )); then
                 minsize=0
@@ -1392,32 +1392,21 @@ media_filesystem_min(){
             if [ $(is_number "$minsize") ] && [ $(is_number "$blocksize") ]; then
                 FS_MIN=$(($minsize * $blocksize))
             fi
-            
             ;;
-            
-        fat32)
-          #  FS_SIZE=$(sudo fatresize -i "$PARTITION" | grep Size | cut -d: -f2 | sed 's/ //g')
-            FS_MIN=$(sudo fatresize -i "$PARTITION" | grep Min | cut -d : -f2 | sed 's/ //g')
-            ;;
-            
-        exfat)
-            #FS_SIZE=$(sudo fsck.exfat  "$PARTITION" | grep Volume | sed 's/  */ /g' | cut -d' ' -f3-4 | sed 's/ //g')
-            FS_MIN=$(sudo fsck.exfat  "$PARTITION" | grep Used | sed 's/  */ /g' | cut -d' ' -f3-4 | sed 's/ //g')
-            ;;     
-            
-        ntfs)
-            sudo ntfsfix -d $PARTITION
-       #     FS_SIZE=$(sudo ntfsresize -i "$PARTITION" | grep "Current volume size:" | cut -d : -f2 | cut -d "b" -f1 | sed 's/ //g')
-            FS_MIN=$(sudo ntfsresize -i "$PARTITION" | grep "resize at" | cut -d t -f 3 | cut -d b -f1 | sed 's/ //g') 
-            ;;
-            
+
         *)
             error $LINENO "fs not known"
             ;;
     esac
-
+    #echo $FS_TYPE
     echo $(bytes $FS_MIN -b)
 }
+
+
+#echo 1-  $(media_filesystem_min /dev/sda1)
+#echo 2-  $(media_filesystem_min /dev/sda2)
+#echo 3-  $(media_filesystem_min /dev/sda3)
+#exit
 
 media_filesystem_mount(){
     local PARTITION=$(media_device_fullname $1)
@@ -1563,7 +1552,7 @@ media_filesystem_verifyXX() {
 
 
 media_filesystem_repair() {
-    local PARTITION=$(device_fullname $1)
+    local PARTITION=$(media_device_fullname $1)
 
     if [[ -z $PARTITION ]]; then
         echo "Usage: diskutil repairFilesystem partition"
@@ -1572,14 +1561,62 @@ media_filesystem_repair() {
      
     media_device_checktarget $PARTITION part 
     if (( $? )); then return 1; fi 
-     
+    
+    local FS_TYPE=$(media_filesystem_fs_type $PARTITION)
+    echo Repairing file system $FS_TYPE
+    
+    case $FS_TYPE in
+        fat16|fat32) 
+            run_command "sudo fsck.fat -a -w -v $PARTITION" $LINENO  # from gparted
+            if (( $? )); then return 1 ; fi
+            ;;
+            
+        exfat)
+         #   run_command "sudo exfatfsck -a $PARTITION" $LINENO
+            
+            echo "Checking exfat filesystem..."
+            run_command "sudo fsck.exfat -n $PARTITION" $LINENO
+            rc=$?
+            if (( $rc )); then
+                error $LINENO "fsck.exfat failed with rc $rc"
+                if [[ $(ui_yesno "Errors found.  Try to fix?" ) != y ]]; then
+                    return 1
+                fi
+                info "Trying to recover corrupted filesystem..."
+                run_command "sudo fsck.exfat -a -v $PARTITION"    $LINENO
+                rc=$?
+                if (( $rc )); then
+                    error $LINENO "fsck.fat failed with rc $rc"
+                    return 1
+                fi
+            fi
+            ;;
+                
+        ntfs)
+            echo " - Clearing ntfs dirty flag..."
+            run_command "sudo ntfsfix -d $PARTITION" $LINENO
+
+            echo " - Check filesystem... fix errors..."           
+            run_command "sudo ntfsresize -i -f -v $PARTITION" $LINENO    # from gparted
+            if (( $? )); then return 1 ; fi
+            ;;
+            
+        ext2|ext3|ext4)
+            run_command "sudo e2fsck -f -y -v -C 0 $PARTITION" $LINENO  # from gparted
+            if (( $? )); then return 1 ; fi
+            ;;
+            
+        *)
+        echo error
+        exit
+        ;;    
+    esac
+    
     
     # -v=verbose -f=force -p=automatic repair
-    run_command "sudo fsck -M -v -p $PARTITION"
+    #run_command "sudo fsck -M -v -p $PARTITION"
     
     #run_command "sudo badblocks -s -v $v"
-    
-    # e2fsck -f -y -v -C 0 '/dev/sda2'
 }
 
 
@@ -1880,31 +1917,39 @@ media_partition_count(){
 
 
 #media_partition_partnum(){
-#    local DEVICE=$(media_device_fullname $1)
+#    local DEVICE=$(media_device_name $1)
 #    local PARTNUM=$(media_device_partnum $1)
 #    sudo parted -ms $DEVICE unit B print |  grep ^$PARTNUM: | cut -d ':' -f 1
 #}
 
 media_partition_start(){
-    local DEVICE=$(media_device_fullname $1)
+    local DEVICE=$(media_device_name $1)
     local PARTNUM=$(media_device_partnum $1)    
     sudo parted -ms $DEVICE unit B print |  grep ^$PARTNUM:  | cut -d ':' -f 2 | tr -d 'B'
 }
 
 
 media_partition_end(){
-    local DEVICE=$(media_device_fullname $1)
+    local DEVICE=$(media_device_name $1)
     local PARTNUM=$(media_device_partnum $1)    
     sudo parted -ms $DEVICE unit B print |  grep ^$PARTNUM:  | cut -d ':' -f 3 | tr -d 'B'
 }
 
 
 media_partition_size(){
-    local DEVICE=$(media_device_fullname $1)
+    local DEVICE=$(media_device_name $1)
     local PARTNUM=$(media_device_partnum $1)    
     sudo parted -ms $DEVICE unit B print |  grep ^$PARTNUM: | cut -d ':' -f 4 | tr -d 'B'
 }
 
+
+media_partition_max(){
+    local DEVICE=$(media_device_name $1)
+    local PARTNUM=$(media_device_partnum $1)  
+    local PART_END=$(media_partition_end $1) 
+    local PART_FREE_START=$(($PART_END + 1))  
+    sudo parted -ms $DEVICE unit B print free |  grep $PART_FREE_START | grep free | cut -d: -f3 | tr -d 'B'
+}
 
 
 media_partition_rename () {
@@ -1918,138 +1963,43 @@ media_partition_rename () {
 
 media_filesystem_resize(){
     #Resize filesystemst run using both the -n and 
-    local PARTITION=$1
-    local SIZE=$2  # min max bytes
     
-    local FS_TYPE=$(  )   
-    echo
-    echo_white "Resize filesystem..."
-    
-    
-    # get file system type
-    if [ -z "$(echo $PARTITION | grep p)" ] ;then
-        DEVICE=$(echo $PARTITION | sed 's/[1-9]*//g')
-    else
-        DEVICE=$(echo $PARTITION | sed 's/p[1-9]*//g')
+    if [[ -z $1 ]]; then
+        echo "Usage: diskutil resizeFilesystem [min max size] Partition"
+        echo "Example:  "
+        return
     fi
-    
-    PARTNUM=$(echo $PARTITION | sed 's/.*[^0-9]\(.*\)$/\1/')
-    
-    if [ ! -e "$DEVICE" ]; then
-        error $LINENO "Device '$DEVICE' does not exist"
-        return 1
-    fi 
 
-    if [ ! -e "$DEVICE$PARTNUM" ]; then
-        error $LINENO "PARTITION '$DEVICE$PARTNUM' does not exist"
+    local DEVICE=$(media_device_name $2)
+    local PARTNUM=$(media_device_partnum $2)
+    local PARTITION=$DEVICE$PARTNUM
+    local SIZE=$1  # min max bytes
+    
+    media_device_checktarget $PARTITION part
+    if (( $? )); then return 1; fi
+    
+    local FS_TYPE=$(media_filesystem_fs_type $PARTITION)    
+
+    local NEW_SIZE=$(media_filesystem_min $PARTITION)
+  
+   
+   if ! (( $NEW_SIZE )); then
+        echo error no size found
         return 1
-    fi 
-    
-    FS_TYPE=$(sudo parted -ms "$DEVICE" unit B print free |  grep -v $DEVICE | grep -v free | grep ^$PARTNUM: | cut -d ':' -f 5 )
-    if (( -z $FS_TYPE )); then
-        FS_TYPE=exfat
-    fi
+    fi    
+   
+
+   echo_white "Resize filesystem..."
   
-  
-  
-    # get current fs size
-    case $FS_TYPE in
-        fat16|fat32)
-            FS_SIZE=$(sudo fatresize -i  $PARTITION | grep Cur | cut -d: -f2 | sed 's/ //g')
-            FS_MIN=
-            FS_MAX=
-            ;;
-        
-        exfat)
-            FS_SIZE=$(sudo fsck.exfat  $PARTITION | grep Volume | cut -d : -f2 | sed 's/Volume size//g' | sed 's/ //g')
-            FS_SIZE=$(get_bytes $FS_SIZE)
-            FS_MIN=
-            FS_MAX=
-            ;;
-        
-        ntfs)
-            FS_SIZE=$(sudo ntfsresize -i  $PARTITION | grep "Current device" | cut -d: -f2 | cut -d" " -f2 | sed 's/ //g')
-            FS_MIN=
-            FS_MAX=
-            ;;
-        
-        ext2|ext3|ext4)
-            FS_BLOCKS=$(sudo tune2fs -l $PARTITION |  grep '^Block count:' | tr -d ' ' | cut -d ':' -f 2)
-            FS_BLOCKSIZE=$(sudo tune2fs -l $PARTITION |  grep '^Block size:' | tr -d ' ' | cut -d ':' -f 2)
-            FS_SIZE=$(($FS_BLOCKS*$FS_BLOCKSIZE))
-            FS_MIN=
-            FS_MAX=
-            ;;
-        
-        *)
-            echo Unsupported file system '$FS_TYPE' ;;
-    esac
-  
-  
-  
-  
-  
-  echo SIZE="'$SIZE'"
-    
-    case $SIZE in
-        min)
-            EXT4_SIZE="$(($NEW_SIZE / 1024))K"
-            NTFS_SIZE="-s $NEW_SIZE"
-            EXFAT_SIZE="-s $NEW_SIZE "
-            FAT_SIZE="-s $NEW_SIZE"
-            ;;
-            
-        max)
-            EXT4_SIZE=
-            NTFS_SIZE="-s $NEW_SIZE"
-            EXFAT_SIZE="-s max "
-            FAT_SIZE="-s $NEW_SIZE"
-            ;;
-            
-        *)
-            EXT4_SIZE="$((SIZE / 1024))K"
-            NTFS_SIZE="-s $SIZE"
-            EXFAT_SIZE=" "
-            FAT_SIZE="-s $SIZE"
-            ;;
-    esac 
-  
-  
-  
-  
+   echo SIZE="'$SIZE'"
+
     
     case $FS_TYPE in
     
-        ext2|ext3|ext4)
-            echo
-            echo_white  "Resizing ext4 filesystem to '$EXT4_SIZE'...line ($LINENO)"
-            run_command "sudo e2fsck -fy $PARTITION" $LINENO
-            rc=$?
-            if (( $rc )); then
-                error $LINENO "e2fsck -f failed with rc $rc "
-                #return 12
-            fi
-            sleep 2
-            
-            if [ -z "$EXT4_SIZE" ]; then
-                run_command "sudo resize2fs  $PARTITION"  $LINENO
-                rc=$?
-            else
-                #echo_blue resize2fs  "$PARTITION" "$EXT4_SIZE"
-                run_command "sudo resize2fs  $PARTITION $EXT4_SIZE" $LINENO
-                rc=$?            
-            fi    
-            if (( $rc )); then
-                error $LINENO "resize2fs failed with rc $rc.  returning "
-                return $rc
-            fi
-            sleep 2
-            ;;
-        
         fat16|fat32)
             echo
-            echo_white "Resizing fat filesystem '$FAT_SIZE'...line ($LINENO)"
-            run_command "sudo fatresize -p -s $FAT_SIZE $PARTITION" $LINENO
+            echo_white "Resizing fat filesystem '$NEW_SIZE'...line ($LINENO)"
+            run_command "sudo fatresize -p -s $NEW_SIZE $PARTITION" $LINENO
             if (( $? )); then
               return 1
             fi   
@@ -2059,9 +2009,9 @@ media_filesystem_resize(){
         
         exfat)
             echo
-            echo_white "Resizing exfat filesystem '$EXFAT_SIZE'...line ($LINENO)"
+            echo_white "Resizing exfat filesystem '$NEW_SIZE'...line ($LINENO)"
             #echo_blue fatresize -p "$FAT_SIZE" "$PARTITION"
-            run_command "sudo fatresize -p $FAT_SIZE $PARTITION" $LINENO
+            run_command "sudo fatresize -p -s $NEW_SIZE $PARTITION" $LINENO
             rc=$?
             if (( $rc )); then
               error $LINENO "resize2fs failed with rc $rc"
@@ -2077,55 +2027,58 @@ media_filesystem_resize(){
             
                 
         ntfs)
+            # use ____ for min or max
             echo
-            echo_white "Resizing ntfs filesystem '$NTFS_SIZE'..."
+            echo_white "Resizing ntfs filesystem '$NEW_SIZE'..."
+            
+            echo_white "Check file system for errors and fix if possible ($LINENO)"
+            media_filesystem_repair $PARTITION -y
+            if (( $? )); then return 1; fi
             
             echo
             echo_white "Check filesystem is ready for resizing...line ($LINENO)"           
-            #echo_blue ntfsresize -c "$PARTITION"
             run_command "sudo ntfsresize -c $PARTITION" $LINENO
-            rc=$?
-            if (( $rc )); then
-              error $LINENO "ntfsresize failed with rc $rc"
-              return $rc
-            fi        
+            if (( $? )); then return 1; fi
             
-            
-            echo_white "Simulate resize ntfs fs...line ($LINENO)"
-            #echo_blue ntfsresize -f -f -n -P "$NTFS_SIZE" "$PARTITION"
-            run_command "sudo ntfsresize -f -f -n -P $NTFS_SIZE $PARTITION" $LINENO
-            rc=$?
-            if (( $rc )); then
-              error $LINENO "ntfsresize failed with rc $rc"
-              return $rc
-            fi        
+            echo_white "Simulate resize ntfs fs... ($LINENO)"
+            run_command "sudo ntfsresize --force --force -s $NEW_SIZE --no-action $PARTITION" $LINENO   # from gparted
+            if (( $? )); then return 1; fi    
     
-        
             echo_white "Resize ntfs fs...($LINENO)"
-            #echo_blue ntfsresize -f -f "$NTFS_SIZE" "$PARTITION"
-            run_command "sudo ntfsresize -f -f $NTFS_SIZE $PARTITION" $LINENO
-            rc=$?
-            if (( $rc )); then
-              error $LINENO "ntfsresize failed with rc $rc"
-              return $rc
-            fi
+            run_command "sudo ntfsresize --force --force -s $NEW_SIZE $PARTITION" $LINENO    #from gparted
+            if (( $? )); then return 1; fi
             
             sleep 2
             echo_white "Clear ntfs dirty flag... line ($LINENO)"
-            #echo_blue ntfsfix -d $PARTITION
             run_command "sudo ntfsfix -d $PARTITION" $LINENO
-            rc=$?
-            if (( $rc )); then
-              error $LINENO "ntfsfix failed with rc $rc"
-              return $rc
-            fi
+            if (( $? )); then return 1; fi
             
             echo_white ntfs info...
-            #echo_blue ntfsresize -i $PARTITION
             run_command "sudo ntfsresize -i $PARTITION" $LINENO
+            if (( $? )); then return 1; fi
             echo
             sleep 2
             ;;
+            
+            
+        ext2|ext3|ext4)
+        # min is -M
+            echo
+            echo_white  "Resizing ext4 filesystem to '$NEW_SIZE'...line ($LINENO)"
+            #run_command "sudo e2fsck -fy $PARTITION" $LINENO
+            
+            echo_white "check fs"
+            media_filesystem_repair $PARTITION
+            if (( $? )); then return 1; fi
+            sleep 2
+            
+            echo_white "resizing"
+            NEW_SIZE=$(($NEW_SIZE / 1024))K
+            run_command "sudo resize2fs -p $PARTITION $NEW_SIZE" $LINENO    #from gparted
+            if (( $? )); then return 1; fi
+            sleep 2
+            ;;       
+            
             
        *)
             error $LINENO.
@@ -2136,13 +2089,119 @@ media_filesystem_resize(){
 
 
 
-
-media_partition_resize(){
-    x=1
+media_filesystem_resize_fix (){
+    # resize a filesystem to fill a partition
+    
+    case $FS_TYPE in
+    
+    
+    ntfs)
+        run_command "sudo ntfsresize -x $PARTITION" $LINENO         
+        ;;
+    
+    ext4)
+        run_command "sudo resize2fs -p $PARTITION" $LINENO          # from gparted
+        ;;
+        
+    esac
     
 }
 
 
+
+media_partition_resize(){
+    
+    local SIZE=$1
+    local PARTITION=$2
+    local DEVICE=$(media_device_name $PARTITION)
+    local PART_NUM=$(media_device_partnum $PARTITION)
+    local FS_SIZE
+    local NEWSIZE
+    
+    if [[ -z $1 ]]; then
+        echo "Usage: disutil resizePartition [min max size] partition"
+        echo "example diskutil resizePartition min sda2"
+        return
+    fi
+    
+    media_device_checktarget  $PARTITION part
+    if (( $? )); then return 1; fi
+    
+    # shrink
+    
+    
+  #  media_filesystem_unmount $PARTITION
+    
+   # media_filesystem_resize  min $PARTITION
+    
+    #local FS_TYPE=$(media_filesystem_fs_type $PARTITION)
+    
+    FS_SIZE=$(media_filesystem_size $PARTITION)
+    
+    case $SIZE in
+        min)    NEW_SIZE=$(media_filesystem_min $PARTITION)       ;;
+        
+        max)    NEW_SIZE=$(media_partition_max $PARTITION)        ;;
+        
+        *)      NEW_SIZE=$SIZE       ;;
+    esac
+    
+    # shrink
+    if [[ $(bytes $NEW_SIZE -b) -lt $FS_SIZE ]]; then
+        echo_green shrink
+        
+        echo_green resize FS
+        media_filesystem_resize $SIZE $PARTITION
+        
+        echo_green resize PART    
+        media_partition_resize_fix $PARTITION
+        return
+    fi
+    
+    
+    
+    # grow
+    if [[ $(bytes $NEW_SIZE -b) -gt $FS_SIZE ]]; then
+        echo_green grow
+        
+        echo_green resize PART  
+        media_partition_resize_grow $SIZE $PARTITION
+        
+        echo_green resize FS
+        media_filesystem_resize_fix $PARTITION
+        return
+    fi  
+      
+}
+
+
+media_partition_resize_fix(){
+        # resize a partition to match the filesystem size
+        
+        local PARTITION=$1
+        local DEVICE=$(media_device_name $PARTITION)
+        local PART_NUM=$(media_device_partnum $PARTITION)
+        local END_FS
+        
+        END_FS=$(($(media_partition_start $PARTITION) + $(media_filesystem_size $PARTITION) ))
+        # echo $END_FS
+        run_command "sudo parted $DEVICE unit B resizepart $PART_NUM $END_FS" $LINENO
+}
+
+
+media_partition_resize_grow(){
+        # grow a partition to a size
+        
+        local PARTITION=$1
+        local SIZE=$2
+        local DEVICE=$(media_device_name $PARTITION)
+        local PART_NUM=$(media_device_partnum $PARTITION)
+        local END
+        
+        END=$(($(media_partition_start $PARTITION) + $(bytes $SIZE -b) ))
+        # echo $END_FS
+        run_command "sudo parted $DEVICE unit B resizepart $PART_NUM $END" $LINENO
+}
 
 media_size() {
     local DEV=$1
@@ -2235,12 +2294,17 @@ media_partition_format(){
             ;;      
         
         ntfs)
-            run_command "sudo mkfs.ntfs -f -L $FS_NAME $PARTITION" $LINENO
+          #  run_command "sudo mkfs.ntfs -f -L $FS_NAME $PARTITION" $LINENO
+            run_command "sudo mkntfs -Q -v -F -L $FS_NAME $PARTITION" $LINENO   # from gparted
             ES=$?
             ;;
         
         ext2 | ext3 | ext4)
             run_command "sudo mkfs -t $FORMAT -L $FS_NAME -E root_owner=$UID:$GID -F $PARTITION" $LINENO
+            ;;
+            
+        ext4)
+            run_command "sudo mkfs.ext4 -F -O ^64bit -L $FS_NAME $PARTITION" $LINENO    # from Gparted
             ES=$?
             ;;
             
@@ -3054,9 +3118,9 @@ case $CMD in
         ;;
         
     print)
-       info_get $TARGET $3
-       if (( $? )); then exit; fi
-       info_echo    
+     #  info_get $TARGET $3
+     #  if (( $? )); then exit; fi
+       info_echo $TARGET  
        ;;
 
     listFilesystems)
@@ -3076,7 +3140,7 @@ case $CMD in
     rename|renameFilesystem)    media_filesystem_rename $2 $3 ;;
     
     verify)       media_filesystem_check $TARGET  ;;
-    repair)       media_filesystem_check $TARGET;;
+    repair)       media_filesystem_repair $TARGET $3;;
     verifyDisk)         media_disk_verify $TARGET ;; 
     repairDisk)         media_disk_repair $TARGET ;; 
     
@@ -3091,7 +3155,7 @@ case $CMD in
     createPartitionTable)   media_disk_createpartitiontable $2 $3 $4  ;;
     addPartition)           media_disk_addpartition $2 $3 $4 $5 $6 ;;
     delPartition)           media_disk_delpartition $2 $3 $4 $5 $6 ;;
-    resizePartition)        media_filesystem_resize $2 $3 $4 ;;
+    resizePartition)        media_partition_resize $2 $3 $4 ;;
             
     clone)
         SOURCE=$1
