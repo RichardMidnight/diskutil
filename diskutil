@@ -1138,17 +1138,17 @@ media_disk_addpartition(){
     # get start location
     #LAST+PARTITION=
     
-    #parted_output="$(sudo parted -ms "$DEVICE" unit B print)"
-    #device_size="$(echo "$parted_output" | grep $DEVICE | cut -d ':' -f 2 | tr -d 'B')"
-    #partnum="$(echo "$parted_output" | tail -n 1 | grep -v $DEVICE | cut -d ':' -f 1)"
-    #partstart="$(echo "$parted_output" | tail -n 1 | grep -v $DEVICE | cut -d ':' -f 2 | tr -d 'B')"
-    #partend="$(echo "$parted_output" | tail -n 1 | grep -v $DEVICE | cut -d ':' -f 3 | tr -d 'B')"
+    parted_output="$(sudo parted -ms "$DEVICE" unit B print)"
+    device_size="$(echo "$parted_output" | grep $DEVICE | cut -d ':' -f 2 | tr -d 'B')"
+    partnum="$(echo "$parted_output" | tail -n 1 | grep -v $DEVICE | cut -d ':' -f 1)"
+    partstart="$(echo "$parted_output" | tail -n 1 | grep -v $DEVICE | cut -d ':' -f 2 | tr -d 'B')"
+    partend="$(echo "$parted_output" | tail -n 1 | grep -v $DEVICE | cut -d ':' -f 3 | tr -d 'B')"
     
-    device_size=$(media_device_size $DEVICE)
-    partnum=$(media_device_partnum $DEVICE)
-    partstart=$(media_partition_start $DEVICE)
-    partend=$(media_partition_end $DEVICE)
-    
+    #device_size=$(media_device_size $DEVICE)
+    #partnum=$(media_device_partnum $DEVICE)
+    #partstart=$(media_partition_start $DEVICE)
+    #partend=$(media_partition_end $DEVICE)
+
 
     # if no partitions present
     if [[ $(is_number $partnum) = false ]]; then
@@ -1166,15 +1166,6 @@ media_disk_addpartition(){
         SIZE=4G
     fi   
     
-    
-echo EXISTING
-echo device_size=$device_size
-echo partnum=$partnum
-echo partstart=$partstart
-echo partend=$partend
-echo buffer=$BUFFER    
-
-echo SIZE=$SIZE
 
 
     NEW_PARTITION=$DEVICE$(($partnum+1))
@@ -1191,6 +1182,15 @@ echo SIZE=$SIZE
 
     BEG=$BEG\B
 
+
+echo EXISTING
+echo device_size=$device_size   device_size=$(media_device_size $DEVICE)
+echo partnum=$partnum           partnum=$(media_device_partnum $DEVICE)
+echo partstart=$partstart       partstart=$(media_partition_start $DEVICE)
+echo partend=$partend           partend=$(media_partition_end $DEVICE)
+echo buffer=$BUFFER    
+
+echo SIZE=$SIZE
 
 echo
 echo NEW
@@ -1830,6 +1830,7 @@ media_filesystem_check() {
                 RC=$?
                 if (( $RC )); then
                     error $LINENO "fsck.fat failed with rc $RC"
+                    echo Recommend using Windows to run chkdsk
                     return 1
                 fi
             fi
@@ -1838,7 +1839,7 @@ media_filesystem_check() {
             
         exfat)
             echo "Checking exfat filesystem..."
-            run_command "sudo fsck.exfat -n $PARTITION" $LINENO
+            run_command "sudo fsck.exfat -n $PARTITION" $LINENO   # -n is no-op
             rc=$?
             if (( $rc )); then
                 error $LINENO "fsck.exfat failed with rc $rc"
@@ -1850,9 +1851,49 @@ media_filesystem_check() {
                 rc=$?
                 if (( $rc )); then
                     error $LINENO "fsck.exfat failed with rc $rc"
+                    echo Recommend using Windows to run chkdsk
                     return 1
                 fi
             fi
+            ;;
+            
+            
+        ntfs)
+            echo " - Checking filesystem..."
+            run_command "sudo ntfsfix -n $PARTITION" $LINENO      # fsck for ntfs.  limited.  -n no-op
+            rc=$?
+            
+            if (( $rc )); then
+                error $LINENO "ntfsfix failed with rc $rc"
+                if [[ $(ui_yesno "Errors found.  Try to fix?" ) != y ]]; then
+                    return 1
+                fi
+                
+                echo_white  "Attempting to repair filesystem..."
+                run_command "sudo ntfsfix -d $PARTITION"
+                if (( $? )) ; then 
+                    echo Error repairing filesystem.
+                    echo Recommend using Windows to run chkdsk 
+                    return 1
+                fi
+                
+                
+                #echo " - Check filesystem... fix errors..."           
+                #run_command "sudo ntfsresize -i -f -v $PARTITION" $LINENO    # from gparted
+                #if (( $rc )); then
+                #    error $LINENO "ntfsresize failed with rc $rc"
+                #    return 1
+                #fi       
+            
+                echo " - Check that ntfs filesystem is ready for resize..."     
+                run_command "sudo ntfsresize -c $PARTITION" $LINENO   
+                if (( $rc )); then
+                    error $LINENO "ntfsresize failed with rc $rc"
+                    echo Error repairing filesystem.
+                    echo Recommend using Windows to run chkdsk 
+                    return 1
+                fi    
+            fi    
             ;;
             
         
@@ -1892,33 +1933,7 @@ media_filesystem_check() {
             fi         
             ;;
             
-            
-        ntfs)
-            echo " - Clearing ntfs dirty flag..."
-            run_command "sudo ntfsfix -d $PARTITION" $LINENO
-            rc=$?
-            if (( $rc )); then
-                error $LINENO "ntfsfix failed with rc $rc"
-                if [[ $(ui_yesno "Errors found.  Try to fix?" ) != y ]]; then
-                    return 1
-                fi
-                echo " - Check filesystem... fix errors..."           
-                run_command "sudo ntfsresize -i -f -v $PARTITION" $LINENO    # from gparted
-                if (( $rc )); then
-                    error $LINENO "ntfsresize failed with rc $rc"
-                    return 1
-                fi       
-            
-                echo " - Check that ntfs filesystem is ready for resize..."     
-                run_command "sudo ntfsresize -c $PARTITION" $LINENO   
-                if (( $rc )); then
-                    error $LINENO "ntfsresize failed with rc $rc"
-                    return 1
-                fi    
-            fi    
-            ;;
-            
-            
+ 
         *)
             error $LINENO "Filesystem '$FILESYSTEM' not supported"
             #return 5
