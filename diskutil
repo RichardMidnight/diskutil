@@ -2183,18 +2183,17 @@ media_partition_resize(){
     media_device_checktarget $PARTITION part
     if (( $? )); then return 1; fi
     
+    if [[ $(media_filesystem_fs_type $PARTITION) = exfat ]]; then
+        echo Cannot resize exfat filesystems
+        return 1
+    fi
+    
     if [[ $(media_filesystem_ismounted $PARTITION) = true ]]; then
         echo $PARTITION is mounted
         return 1
     fi
 
     
-    
-  #  media_filesystem_unmount $PARTITION
-    
-   # media_filesystem_resize  min $PARTITION
-    
-    #local FS_TYPE=$(media_filesystem_fs_type $PARTITION)
     
     FS_SIZE=$(media_filesystem_size $PARTITION)
     
