@@ -9,7 +9,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.2"
+VER="0.1.3"
 BACKTITLE="Disk Utility"
 
 SETTINGS="/home/$USER/.config/$SCRIPTNAME/$SCRIPTNAME.conf"
@@ -897,7 +897,7 @@ info_echo(){
     if (( $? )); then return 1; fi
     
     echo
-    echo "=======   FS INFO   ============"
+    echo "=======   PARTITION INFO   ============"
     echo "DEVICE       = '$(media_device_name $DEVICE)'"
     echo "DEVICE_SIZE  = $(bytes $(media_device_size $DEVICE) -h)      '$(media_device_size $DEVICE)' " 
     echo "Partition tbl= $(media_device_partition_table $DEVICE) "  
@@ -923,7 +923,7 @@ echo_blue $P_SIZE $FS_SIZE
         diff=unknown
     fi
     echo_white "FS_SIZE      = $(bytes $(media_filesystem_size $DEVICE) -h)      '$(media_filesystem_size $DEVICE)'   ($diff b smaller than partition)"   
-    echo "FS_MIN       = $(bytes $(media_filesystem_min $DEVICE) -h)      '$(media_filesystem_min $DEVICE)'    "    
+    echo "FS_MIN       = $(bytes $(media_filesystem_min $DEVICE) -h)       '$(media_filesystem_min $DEVICE)'    "    
     
     
    # echo
@@ -1344,14 +1344,6 @@ media_filesystem_size(){
     local FS_TYPE=$(media_filesystem_fs_type $PARTITION)    
      
      case $FS_TYPE in
-        ext2|ext3|ext4)       
-            blockcount="$(sudo tune2fs -l "$PARTITION" | grep '^Block count:' | tr -d ' ' | cut -d ':' -f 2)"
-            blocksize="$(sudo tune2fs -l "$PARTITION" | grep '^Block size:' | tr -d ' ' | cut -d ':' -f 2)"
-            if [[ $(is_number $currentsize) ]] && [[ $(is_number $blocksize) ]]; then
-                FS_SIZE=$(($blockcount * $blocksize))
-            fi
-            ;;
-            
         fat32)
             #FS_SIZE=$(sudo fatresize -i "$PARTITION" | grep "Cur size" | cut -d: -f2 | sed 's/ //g')
             FS_SIZE=$(sudo fatresize -i "$PARTITION" | grep "Size:" | cut -d: -f2 | sed 's/ //g')
@@ -1367,6 +1359,14 @@ media_filesystem_size(){
             # clear dirty bit
             sudo ntfsfix -d $PARTITION >> /dev/null
             FS_SIZE=$(sudo ntfsresize -i "$PARTITION" | grep "Current volume size:" | cut -d : -f2 | cut -d "b" -f1 | sed 's/ //g')
+            ;;
+            
+        ext2|ext3|ext4)       
+            blockcount="$(sudo tune2fs -l "$PARTITION" | grep '^Block count:' | tr -d ' ' | cut -d ':' -f 2)"
+            blocksize="$(sudo tune2fs -l "$PARTITION" | grep '^Block size:' | tr -d ' ' | cut -d ':' -f 2)"
+            if [[ $(is_number $currentsize) ]] && [[ $(is_number $blocksize) ]]; then
+                FS_SIZE=$(($blockcount * $blocksize))
+            fi
             ;;
             
         *)
@@ -2140,6 +2140,11 @@ SIZE=$(($SIZE/1024))k
         run_command "sudo fatresize -v -p -s $SIZE $PARTITION   " $LINENO
         if (( $? )); then return 1; fi
         ;;
+        
+    exfat)
+        echo_red ERROR - CANT RESIZE exfat Filesystem
+            ;;
+        
     
     ntfs)
         #run_command "sudo ntfsresize -x $PARTITION" $LINENO       
@@ -2286,8 +2291,9 @@ media_partition_resize_tofs(){
         local PART_NUM=$(media_device_partnum $PARTITION)
         local END_FS
         END_FS=$(($(media_partition_start $PARTITION) + $(media_filesystem_size $PARTITION) ))
-echo_blue  $(media_partition_start $PARTITION) 
-echo_blue $(media_filesystem_size $PARTITION)      
+echo_blue  part start:$(media_partition_start $PARTITION) 
+echo_blue fs size:$(media_filesystem_size $PARTITION)   
+echo_blue end fs:$END_FS   
         
         run_command "sudo parted $DEVICE unit B resizepart $PART_NUM $END_FS" $LINENO
 }
