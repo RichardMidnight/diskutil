@@ -762,7 +762,7 @@ bytes(){
 
 media_partition_info(){
     local DEVICE=$(media_device_name $1)
-  #  local PARTITION_NUM=$(media_device_partnum $1)
+    local PARTITION_NUM=$(media_device_partnum $1)
     local PARTITION=$(media_device_fullname $1)
     local TARGET=$PARTITION
     local diff
@@ -844,8 +844,8 @@ media_partition_info(){
     echo "Partition tbl= $PART_TABLE"  
     echo
  #   echo "PARTITION    = '$(media_device_fullname $DEVICE)'" 
- #   echo "PARTNUM      = '$(media_device_partnum $PARTITION)'"  
-    echo "PARTITION    = '$PARTITION'"
+    echo "PARTNUM      = '$(media_device_partnum $PARTITION)'"  
+    echo "PARTITION    = '$PARTITION'"  
     echo "PART_START   = $(bytes $PART_START -h)      '$PART_START' "   
     echo "PART_END     = $(bytes $PART_END -h)      '$PART_END'  "          
     echo_white "PART_SIZE    = $(bytes $PART_SIZE -h)      '$PART_SIZE'   ($p_diff b larger than calc)"
@@ -904,11 +904,20 @@ media_device_partnum(){
     # returns the partition number if present.  Same as returns the last digits in the string.
     #echo $1 | sed 's/.*[^1-9]\(.*\)$/\1/'
     
+    local PARTNUM=$(echo $1 | sed 's/.*[^1-9]\(.*\)$/\1/')
+    
     if [ -z "$(echo $1 | grep p)" ] ;then
-        echo $1 | sed 's/.*[^1-9]\(.*\)$/\1/'
+        echo $PARTNUM
     else
-        echo p$(echo $1 | sed 's/.*[^1-9]\(.*\)$/\1/')
+        echo p$PARTNUM
     fi
+    
+    
+   # if [ -z "$(echo $1 | grep p)" ] ;then
+   #     echo $1 | sed 's/.*[^1-9]\(.*\)$/\1/'
+   # else
+   #     echo p$(echo $1 | sed 's/.*[^1-9]\(.*\)$/\1/')
+   # fi
 }
 
 
@@ -1229,15 +1238,17 @@ media_filesystem_name(){
     
 media_filesystem_fs_type(){
     #local PARTITION=$(media_device_fullname $1)
-    local DEVICE=$(media_device_name $1)
-    local PARTNUM=$(media_device_partnum $1)   
+   # local DEVICE=$(media_device_name $1)
+   # local PARTNUM=$(media_device_partnum $1)   
    
-    local FS_TYPE=$(sudo parted $DEVICE -m print | grep ^$PARTNUM: | cut -d: -f5)
+    local FS_TYPE=$(lsblk -n $1 -o FSTYPE)
+    
+  #  local FS_TYPE=$(sudo parted $DEVICE -m print | grep ^$PARTNUM: | cut -d: -f5)
     
     # dumb bandaid
-    if [[ -z $FS_TYPE ]]; then
-        FS_TYPE=exfat
-    fi
+ #   if [[ -z $FS_TYPE ]]; then
+ #       FS_TYPE=exfat
+ #   fi
     
     echo $FS_TYPE
 }
