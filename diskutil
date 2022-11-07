@@ -55,15 +55,15 @@ BUFFER=$((10*1024*1024))  # 10 meg
 
 disk_utility_help(){
 echo "Disk Utility Tool
-Utility to manage disks and partitions Based on Apple's diskutil
-Most commands require an administrator or root user
+Utility to manage disks and partitions. Based on Apple's diskutil
+Most commands DO NOT require an administrator or root user
 WARNING: Most destructive operations are not prompted
 
-This simplifies the use of: parted, lsblk, udisksctl mount, udisksctl unmount, udisksctl power-off, 
+This simplifies the use of: parted, lsblk, udisksctl mount, udisksctl unmount, udisksctl power-off, etc.
 
 Usage:  diskutil [quiet] <verb> <options>, where <verb> is as follows:
 
-     list                 (List the partitions of a disk)
+     list                 (List available disks and partitions)
      info[rmation]        (Get information on a specific disk or partition)
      listFilesystems      (List file systems available for formatting)
 
@@ -79,26 +79,25 @@ Usage:  diskutil [quiet] <verb> <options>, where <verb> is as follows:
      repair               (Repair the data structures of a filesystem)
      verifyDisk           (Verify the components of a partition map of a disk)
      repairDisk           (Repair the components of a partition map of a disk)
+     resizePartition      (Resize a partition and filesystem, increasing or decreasing its size)
 
-     erasePartition       (Erase an existing partition, removing all partitions and data)
+  --  DESTRUCTIVE OPERATIONS ---
+  
+     erasePartition       (Erase an existing partition, removing all data in the partition)
      eraseDisk            (Erase an existing disk, removing all partitions and data)
-     reformat             (Erase an existing partition with same name and type)
+     reformat             (Erase an existing partition with same name and filesystem)
      X eraseOptical         (Erase optical media (CD/RW, DVD/RW, etc.))
      
      zeroDisk             (Erase a disk, writing zeros to the media)
      randomDisk           (Erase a disk, writing random data to the media)
      secureErase          (Securely erase a disk)
 
-     createPartitionTable   (Erase the partition table and create a new one)
+     createPartitionTable  (Erase a disk's partition table and create a new one)
      X partitionDisk        ((re)Partition a disk, removing all volumes)
      addPartition         (Create a new partition to occupy free space)
      delPartition         (Delete a partition)
-     X splitPartition       (Split an existing partition into two or more)
-     X mergePartitions      (Combine two or more existing partitions into one)
-     resizePartition      (Resize a partition and filesystem, increasing or decreasing its size)
-     
-     hexedit            (edit disk or partition)
 
+     hexedit              (edit disk or partition)
 
 diskutil <verb> with no options will provide help on that verb
 "
@@ -776,63 +775,34 @@ media_partition_info(){
     
     
     #echo DiskInfo:
-    echo Partition table type: $(media_device_partition_table $TARGET)
+    #echo Partition table type: $(media_device_partition_table $TARGET)
    
     
- #   media_device_checktarget $DEVICE part
- #   if (( $? )); then return 1; fi
-    
-    # mount
- #   if [[ ! $(media_filesystem_ismounted $PARTITION) ]] ; then
- #       echo
- #       echo "Mounting $PARTITION ..."
-     #   WAS_MOUNTED=true
-        #umount $PARTITION
- #       media_filesystem_mount $PARTITION
- #   fi
+    media_device_checktarget $TARGET part
+    if (( $? )); then return 1; fi
     
     
-      #  case $(lsblk -n -d -o type $PARTITION) in
-      case $(media_device_type $TARGET) in
-            disk) 
-                #run_command "lsblk $TARGET -o name,path,mountpoint,fstype,pttype,ptuuid,partuuid,size,label,vendor,model" $LINENO
-               # run_command "sudo parted $TARGET print free | grep -v Partition" $LINENO
-                run_command "sudo parted $TARGET print free" $LINENO
-                run_command "lsblk -f $TARGET" $LINENO
-                echo
-                return
-                ;;
-
-            part)
-                # mount
-              #  if [[ ! $(media_filesystem_ismounted $PARTITION) ]] && [[ $(ui_yesno "Mount $PARTITION?" ) = y ]]; then
-              #      echo
-              #      echo "Mounting $PARTITION ..."
-                 #   WAS_MOUNTED=true
-                    #umount $PARTITION
-              #      media_filesystem_mount $PARTITION
-              #  fi
-                run_command "sudo parted $TARGET print free" $LINENO
-                run_command "lsblk -f $TARGET" $LINENO
-                echo
-                
-            ;;
-
-
-            *)
-                echo Error unknown device type
-                return 1
-                ;;
-        esac
+    
+    # mount the partition silently
+    #media_filesystem_mount $TARGET
+    udisksctl mount -b $PARTITION   2>/dev/null
+    
+    echo_white Displaying disk and partition info...
+    run_command "sudo parted $TARGET print free" $LINENO
+    run_command "lsblk -f $TARGET" $LINENO
+    echo
+    
+    if [[ -z $WAS_MOUNTED ]] ;then
+        #media_filesystem_unmount $TARGET
+        udisksctl unmount -b $PARTITION  2>/dev/null
+    fi
     
     
     
     # unmount
-    if [[ $(media_filesystem_ismounted $PARTITION) ]]  && [[ $(ui_yesno "Unmount $PARTITION?" ) = y ]]; then
+    if [[ $(media_filesystem_ismounted $PARTITION) ]]  && [[ $(ui_yesno "Unmount then remount $PARTITION?" ) = y ]]; then
         echo
         echo "Unmounting $PARTITION ..."
-     #   WAS_MOUNTED=true
-        #umount $PARTITION
         media_filesystem_unmount $PARTITION
     fi
     
@@ -873,9 +843,9 @@ media_partition_info(){
     echo "DEVICE_SIZE  = $(bytes $DEVICE_SIZE -h)      '$DEVICE_SIZE' " 
     echo "Partition tbl= $PART_TABLE"  
     echo
-    echo "PARTITION    = '$(media_device_fullname $DEVICE)'" 
-    echo "PARTNUM      = '$(media_device_partnum $DEVICE)'"  
-    echo
+ #   echo "PARTITION    = '$(media_device_fullname $DEVICE)'" 
+ #   echo "PARTNUM      = '$(media_device_partnum $PARTITION)'"  
+    echo "PARTITION    = '$PARTITION'"
     echo "PART_START   = $(bytes $PART_START -h)      '$PART_START' "   
     echo "PART_END     = $(bytes $PART_END -h)      '$PART_END'  "          
     echo_white "PART_SIZE    = $(bytes $PART_SIZE -h)      '$PART_SIZE'   ($p_diff b larger than calc)"
@@ -885,7 +855,7 @@ media_partition_info(){
     echo "FS_TYPE      = $FS_TYPE"  
     echo "FS NAME      = $FS_NAME"
     echo_white "FS_SIZE      = $(bytes $FS_SIZE -h)      '$FS_SIZE'   ($fs_diff b smaller than partition)"   
-    echo "FS_MIN       = $(bytes $FS_MIN -h)      '$FS_MIN " 
+    echo "FS_MIN       = $(bytes $FS_MIN -h)      '$FS_MIN' " 
     
     if [[ $fs_diff -lt 0 ]]; then
         new_end=$(( $PART_START + $FS_SIZE ))
@@ -897,8 +867,6 @@ media_partition_info(){
     if [[ ! -z  $WAS_MOUNTED ]] ; then
         echo
         echo "Mounting $PARTITION ..."
-     #   WAS_MOUNTED=true
-        #umount $PARTITION
         media_filesystem_mount $PARTITION
     fi
     
@@ -1074,11 +1042,14 @@ media_disk_info(){
 
     
     #echo DiskInfo:
+    echo Device: $DEVICE
     echo Partition table type: $(media_device_partition_table $TARGET)
+    echo
    
     
     #run_command "lsblk $TARGET -o name,path,mountpoint,fstype,pttype,ptuuid,partuuid,size,label,vendor,model" $LINENO
    # run_command "sudo parted $TARGET print free | grep -v Partition" $LINENO
+    echo_white Displaying disk and partition info...
     run_command "sudo parted $TARGET print free" $LINENO
     run_command "lsblk -f $TARGET" $LINENO
    # echo
@@ -1281,6 +1252,9 @@ media_filesystem_size(){
             #FS_SIZE=$(sudo fatresize -i "$PARTITION" | grep "Cur size" | cut -d: -f2 | sed 's/ //g')
             FS_SIZE=$(sudo fatresize -i "$PARTITION" | grep "Size:" | cut -d: -f2 | sed 's/ //g')
             #FS_SIZE=$(sudo fsck.fat -n -v $PARTITION | grep "data clusters" | cut -d\( -f2 | cut -d" " -f1)
+            if [[ -z $FS_SIZE ]]; then
+                FS_SIZE=$(sudo fatresize -i "$PARTITION" | grep "Cur size:" | cut -d: -f2 | sed 's/ //g')
+            fi
             ;;
             
         exfat)
@@ -1375,6 +1349,7 @@ media_filesystem_ismounted(){
 
 media_filesystem_mount(){
     local PARTITION=$(media_device_fullname $1)
+    local SILENT=$2
     
     if [[ -z $PARTITION ]]; then
         echo "Usage: diskutil mount partition"
@@ -1493,6 +1468,7 @@ media_name(){
 
 media_filesystem_repair() {
     local PARTITION=$(media_device_fullname $1)
+    local WAS_MOUNTED
 
     if [[ -z $PARTITION ]]; then
         echo "Usage: diskutil repairFilesystem partition"
@@ -1501,6 +1477,17 @@ media_filesystem_repair() {
      
     media_device_checktarget $PARTITION part 
     if (( $? )); then return 1; fi 
+    
+    
+    # unmount
+    if [[ $(media_filesystem_ismounted $PARTITION) ]] && [[ $(ui_yesno "Unmount and remount $PARTITION?" ) = y ]]; then
+        echo
+        echo "Unmounting $PARTITION ..."
+        WAS_MOUNTED=true
+        #umount $PARTITION
+        media_filesystem_unmount $PARTITION
+    fi
+    
     
     local FS_TYPE=$(media_filesystem_fs_type $PARTITION)
     echo_white Repairing $FS_TYPE file system... 
@@ -1581,6 +1568,13 @@ media_filesystem_repair() {
             exit
             ;;    
     esac
+    
+    if [ $WAS_MOUNTED ]; then
+        echo Remounting $PARTITION...
+        media_filesystem_mount $PARTITION
+    fi
+    
+     ui_echo "~ filesystem_repair OK" green
 }
 
 
@@ -1724,7 +1718,7 @@ media_filesystem_check() {
 
 
     # unmount
-    if [[ $(media_filesystem_ismounted $PARTITION) ]] && [[ $(ui_yesno "Unmount $PARTITION?" ) = y ]]; then
+    if [[ $(media_filesystem_ismounted $PARTITION) ]] && [[ $(ui_yesno "Unmount and remount $PARTITION?" ) = y ]]; then
         echo
         echo "Unmounting $PARTITION ..."
         WAS_MOUNTED=true
@@ -2150,8 +2144,19 @@ media_partition_resize(){
     media_filesystem_check $PARTITION
     if (( $? )); then
         echo Errors on filesystem $PARTITION. Cannot resize.
+        echo run 'disutil repairPartition $PARTITION', then retry this.
         return 1
     fi    
+    
+    sleep 2
+    echo
+    echo_white "Step 1.5: Repairing filesystem before resize..."
+    media_filesystem_repair $PARTITION
+    if (( $? )); then
+        echo Errors on filesystem $PARTITION. Cannot resize.
+        return 1
+    fi     
+    
     
     
     if [[ $SILENT != -y ]]; then
@@ -3152,9 +3157,14 @@ case $CMD in
         ;;        
 
     info*)        
-        media_disk_info $TARGET
-    #    media_partition_info $TARGET        
-    ;;
+        if [[ $(media_device_type $2) = disk ]]; then
+            media_disk_info $TARGET
+        else
+          #  media_disk_info $TARGET
+          #  echo
+            media_partition_info $TARGET 
+        fi
+        ;;
     
     listFilesystems)        echo "Supported file systems: $FILESYSTEMS "    ;;
 
