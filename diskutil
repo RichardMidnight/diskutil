@@ -1819,7 +1819,6 @@ media_filesystem_resize(){
                  *)      NEW_SIZE="-s $(( $(bytes $SIZE -b) / 1024 ))k"  ;;
              esac
             
-            
             echo
             echo_white "Check filesystem is ready for resizing...line ($LINENO)"           
             run_command "sudo ntfsresize -c $PARTITION" $LINENO
@@ -1834,7 +1833,6 @@ media_filesystem_resize(){
             echo_white "Resize ntfs fs...($LINENO)"
             run_command "sudo ntfsresize --force --force $NEW_SIZE $PARTITION" $LINENO    #from gparted
             if (( $? )); then return 1; fi
-            
             
             
             sleep 2
@@ -1857,7 +1855,6 @@ media_filesystem_resize(){
                  *)      NEW_SIZE="$(( $(bytes $SIZE -b) / 1024 ))k"  ;;
              esac
             
-          #  NEW_SIZE=$(( $(bytes $NEW_SIZE -b) / 1024 ))K
             echo_white "Resizing $PARTITION to $NEW_SIZE"
             run_command "sudo resize2fs -p $PARTITION $NEW_SIZE" $LINENO    #from gparted
             if (( $? )); then return 1; fi
