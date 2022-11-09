@@ -9,7 +9,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.5"  #2022-11-08
+VER="0.1.6"  #2022-11-08
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -68,6 +68,7 @@ Usage:  diskutil [quiet] <verb> <options>, where <verb> is as follows:
      verifyDisk           (Verify the components of a partition map of a disk)
      repairDisk           (Repair the components of a partition map of a disk)
      resizePartition      (Resize a partition and filesystem, increasing or decreasing its size)
+     resizeFilesystem
 
   --  DESTRUCTIVE OPERATIONS ---
   
@@ -756,9 +757,25 @@ media_device_checktarget(){
 
 media_filesystem_fs_type(){
     local PARTITION=$(media_device_fullname $1)
-   # local DEVICE=$(media_device_name $1)
-   # local PARTNUM=$(media_device_partnum $1)   
+    local DEVICE=$(media_device_name $1)
+    local PARTNUM=$(media_device_partnum $1)   
+    local FS_TYPE
    
+   # works with fat32, but not exfat
+   FS_TYPE=$(sudo parted $DEVICE -m print | grep ^$PARTNUM: | cut -d: -f5)
+   
+   # works with exfat
+   if [[ -z $FS_TYPE ]]; then
+        FS_TYPE=$(lsblk -n $PARTITION -o FSTYPE)
+   fi
+   
+   echo $FS_TYPE
+   
+   return
+   
+   
+   
+   # using lsblk is faster, but unreiable with dos partition tables...
     local FS_TYPE=$(lsblk -n $PARTITION -o FSTYPE)
     if [[ $FS_TYPE == "vfat" ]]; then
         FS_TYPE=$(lsblk -n $PARTITION -o FSVER)
@@ -769,6 +786,10 @@ media_filesystem_fs_type(){
         exit
     fi
     
+    if [[ $FS_TYPE = "lsblk: unknown column: FSVER" ]]; then
+        FS_VER=$(sudo parted $DEVICE -m print | grep ^$PARTNUM: | cut -d: -f5)
+    fi
+
     echo ${FS_TYPE,,}   # this makes it lower case
     
   #  local FS_TYPE=$(sudo parted $DEVICE -m print | grep ^$PARTNUM: | cut -d: -f5)
@@ -909,9 +930,13 @@ media_filesystem_unmount(){
 media_filesystem_size(){  
     local PARTITION=$(media_device_fullname $1)
     local FS_TYPE=$(media_filesystem_fs_type $PARTITION)    
+    local FS_SIZE
 
 #echo_blue "fs size $PARTITION"
 #echo_blue "fs size $FS_TYPE"
+#echo_blue $FS_TYPE
+#exit
+
      
      case $FS_TYPE in
         fat16|fat32)
@@ -928,9 +953,11 @@ media_filesystem_size(){
       #      fi
             ;;
             
+            
         exfat)
             FS_SIZE=$(sudo fsck.exfat  "$PARTITION" | grep Volume | sed 's/  */ /g' | cut -d' ' -f3-4 | sed 's/ //g')
             ;;     
+            
             
         ntfs)
             #sudo ntfsfix -d $PARTITION
@@ -1219,6 +1246,14 @@ media_disk_createpartitiontable(){
 
 
 media_disk_addpartition(){   
+    if [[ -z $1 ]]; then
+        echo "Usage: diskutil addPartition device [format] [size] [name] [-y]"
+        echo "  Format is: fat16 | fat32 | exfat | ntfs | ext2 | ext3 | ext4 | linux-swap"
+        echo Example: diskutil addPartition ntfs Untitled 2G /dev/disk3
+        echo Example: diskutil addPartition exfat NEWDISK 3G sda
+        return
+    fi
+    
     local DEVICE=$(media_device_name $1)
     local FORMAT=${2:-fat32}    # fat16, fat32, exfat, ntfs, ext2, ext3, ext4
     local NAME=${4:-"NEW"}
@@ -1236,13 +1271,7 @@ media_disk_addpartition(){
     local END_BYTE
   
   
-    if [[ -z $1 ]]; then
-        echo "Usage: diskutil addPartition device [format] [size] [name] [-y]"
-        echo "  Format is: fat16 | fat32 | exfat | ntfs | ext2 | ext3 | ext4 | linux-swap"
-        echo Example: diskutil addPartition ntfs Untitled 2G /dev/disk3
-        echo Example: diskutil addPartition exfat NEWDISK 3G sda
-        return
-    fi
+ 
     
     media_device_checktarget "$DEVICE" disk 
     if (( $? )); then return 1; fi 
@@ -1745,18 +1774,31 @@ media_filesystem_resize(){
     case $FS_TYPE in
     
         fat16|fat32)
+            # You can't resize FAT32 partition lesser than 512Mb
              case $SIZE in
-                 min)    NEW_SIZE="-s $(( $(media_filesystem_min $PARTITION) / 1024 ))k";;
+                 min)    
+                    #NEW_SIZE="-s $(( $(media_filesystem_min $PARTITION) / 1024 ))k"
+                    NEW_SIZE=$(sudo fatresize -i $PARTITION | grep Min | cut -d: -f2 | tr -d " ")
+                    if [[ $NEW_SIZE < $(bytes 550M -b) ]]; then
+                        NEW_SIZE=$(bytes 550M -b)
+                    fi 
+                    NEW_SIZE=" -s $(( $NEW_SIZE / 1024 ))k"
+                    ;;
                # max)    NEW_SIZE="-s max"  ;;
                  max)    
    #echo_blue $PARTITION
    #echo_blue               
-                 NEW_SIZE="-s $(( $(media_partition_size $PARTITION) / 1024 ))k" ;;
+               #  NEW_SIZE="-s $(( $(media_partition_size $PARTITION) / 1024 ))k" ;;
+               NEW_SIZE=$(sudo fatresize -i $PARTITION | grep Max | cut -d: -f2 | tr -d " ") 
+            #   NEW_SIZE=$(( $NEW_SIZE - 1024 ))
+               NEW_SIZE=" -s $(( $NEW_SIZE / 1024 ))k"
+               ;;
+               
                  *)      NEW_SIZE="-s $(( $(bytes $SIZE -b) / 1024 ))k"  ;;
              esac
         
             echo
-        #    echo_white "Resizing fat filesystem '$NEW_SIZE'... (line $LINENO)"
+            echo_white "Resizing fat filesystem to '$NEW_SIZE'... (line $LINENO)"
             run_command "sudo fatresize -p $NEW_SIZE $PARTITION" $LINENO
             rc=$?
             if (( $rc )); then
@@ -1793,7 +1835,7 @@ media_filesystem_resize(){
         ntfs)
              case $SIZE in
                  min)    NEW_SIZE="-s $(( $(media_filesystem_min $PARTITION) / 1024 ))k";;
-                 max)    NEW_SIZE="-x"  ;;
+                 max)    NEW_SIZE=""  ;;
                  *)      NEW_SIZE="-s $(( $(bytes $SIZE -b) / 1024 ))k"  ;;
              esac
              
@@ -1860,12 +1902,10 @@ media_filesystem_resize(){
             if (( $? )); then return 1; fi
             sleep 2
             
+        
             
- 
-
-            
-            echo_white "Resizing"
-            NEW_SIZE=$(($NEW_SIZE / 1024))K
+          #  NEW_SIZE=$(( $(bytes $NEW_SIZE -b) / 1024 ))K
+            echo_white "Resizing $PARTITION to $MIN_SIZE $NEW_SIZE"
             run_command "sudo resize2fs -p $MIN_SIZE $PARTITION $NEW_SIZE" $LINENO    #from gparted
             if (( $? )); then return 1; fi
             sleep 2
@@ -2523,6 +2563,14 @@ media_partition_resize_tofs(){
 #echo_blue fs size:$(media_filesystem_size $PARTITION)   
 #echo_blue end fs:$END_FS   
 
+        # skip if fat32
+        local FS_TYPE=$(media_filesystem_fs_type $PARTITION)
+        if [[ $FS_TYPE = fat32 ]]; then
+            echo_white fat32 partitions automatically resize
+            return
+        fi
+
+
         echo_white "Resizing the partition to fit the file system"
         run_command "sudo parted $DEVICE unit B resizepart $PART_NUM $END_FS" $LINENO
 }
@@ -2532,6 +2580,17 @@ media_partition_resize_grow(){
         # grow a partition to a size
         local SIZE=$1
         local PARTITION=$2
+        
+        
+        
+        # skip if fat32
+        local FS_TYPE=$(media_filesystem_fs_type $PARTITION)
+        if [[ $FS_TYPE = fat32 ]]; then
+            echo_white fat32 partitions automatically resize
+            return
+        fi
+        
+        
 
         local DEVICE=$(media_device_name $PARTITION)
         local PART_NUM=$(media_device_partnum $PARTITION)
@@ -3297,7 +3356,9 @@ case $CMD in
     createPartitionTable)   media_disk_createpartitiontable $2 $3 $4  ;;
     addPartition)           media_disk_addpartition $2 $3 $4 $5 $6 ;;
     delPartition)           media_disk_delpartition $2 $3 $4 $5 $6 ;;
+    resize)                 media_partition_resize $2 $3 $4 ;;
     resizePartition)        media_partition_resize $2 $3 $4 ;;
+    resizeFilesystem)       media_filesystem_resize $2 $3 $4 ;;
             
     clone)
         SOURCE=$1
