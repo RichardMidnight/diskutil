@@ -67,8 +67,8 @@ Usage:  diskutil [quiet] <verb> <options>, where <verb> is as follows:
      repair               (Repair the data structures of a filesystem)
      verifyDisk           (Verify the components of a partition map of a disk)
      repairDisk           (Repair the components of a partition map of a disk)
-     resizePartition      (Resize a partition and filesystem, increasing or decreasing its size)
-     resizeFilesystem
+     resizePart           (Resize a partition and filesystem, increasing or decreasing its size)
+     resizeFS
 
   --  DESTRUCTIVE OPERATIONS ---
   
@@ -1807,13 +1807,18 @@ media_filesystem_resize(){
             
                 
         ntfs)
+        
+ echo_blue mize=$SIZE       
              case $SIZE in
                  min)    
-                    NEW_SIZE="$(( $(media_filesystem_min $PARTITION) / 1024 ))k"
-                    if [[ $(bytes $NEW_SIZE -b) < $(bytes 512m -b) ]]; then
+                    NEW_SIZE="$(media_filesystem_min $PARTITION)"
+                    if [[ $NEW_SIZE  -lt $(bytes 512m -b) ]]; then
+ echo_blue raise min                   
                         NEW_SIZE=$(bytes 512m -b)
+                else
+ echo_blue min is ok  $NEW_SIZE                       
                     fi
-                    NEW_SIZE="-s $NEW_SIZE"
+                    NEW_SIZE="-s $(( $NEW_SIZE / 1024 ))k"
                     ;;
                  max)    NEW_SIZE=""  ;;
                  *)      NEW_SIZE="-s $(( $(bytes $SIZE -b) / 1024 ))k"  ;;
@@ -1869,7 +1874,7 @@ media_filesystem_resize(){
     esac
     
     echo
-    echo_white $PARTITION resized to from $(bytes $STARTING_SIZE -h) to $(bytes $(media_filesystem_size $PARTITION) -h)
+    echo_white $PARTITION filesystem resized to from $(bytes $STARTING_SIZE -h) to $(bytes $(media_filesystem_size $PARTITION) -h)
 }
 
 
@@ -2377,7 +2382,7 @@ media_partition_rename () {
 
 
 
-media_partition_resize(){
+media_device_resize_part_and_filesystem(){
     local DEVICE=$(media_device_name $1)
     local PART_NUM=$(media_device_partnum $1)
     local PARTITION=$(media_device_fullname $1)
@@ -2388,7 +2393,7 @@ media_partition_resize(){
     
     
     if [[ -z $1 ]]; then
-        echo "Usage: disutil resizePartition partition [min max size]"
+        echo "Usage: disutil resize partition [min max size]"
         echo "example diskutil resizePartition sda1 min"
         return
     fi
@@ -2411,7 +2416,8 @@ media_partition_resize(){
     FS_SIZE=$(media_filesystem_size $PARTITION)
     
     case $SIZE in
-        min)    NEW_SIZE=$(media_filesystem_min $PARTITION)       ;;
+     #   min)    NEW_SIZE=$(media_filesystem_min $PARTITION)       ;;
+        min)    NEW_SIZE=min       ;;
         
         max)    NEW_SIZE=$(( $(media_partition_max $PARTITION) - $(media_partition_start $PARTITION)  ))    ;;
         
@@ -2421,7 +2427,7 @@ media_partition_resize(){
     echo $FS_SIZE
     echo $NEW_SIZE
     
-    sleep 2
+    sleep 1
     echo_white "Step 1: Checking filesytem on $PARTITION..."
     media_filesystem_check $PARTITION
     if (( $? )); then
@@ -2430,7 +2436,7 @@ media_partition_resize(){
         return 1
     fi    
     
-    sleep 2
+    sleep 1
     echo
     echo_white "Step 1.5: Repairing filesystem before resize..."
     media_filesystem_repair $PARTITION
@@ -2465,12 +2471,12 @@ media_partition_resize(){
         echo_green Shrink...
         
         echo_white " - Step 2: Shrink the FILESYSTEM to ..."
-        media_filesystem_resize $PARTITION $SIZE
+        media_filesystem_resize $PARTITION $NEW_SIZE
         if (( $? )); then return 1; fi
         
-        sleep 1
+        sleep 2
         echo_white " - Step 3: Shrink PARTITION to fit FILESYSTEM..."   
-        media_partition_resize_tofs $PARTITION    
+        media_partition_resize $PARTITION min   
         if (( $? )); then return 1; fi
     fi
     
@@ -2481,10 +2487,10 @@ media_partition_resize(){
         echo_green Grow...
         
         echo_white " - Step 2: Grow the PARTTITION... " 
-        media_partition_resize_grow $NEW_SIZE $PARTITION
+        media_partition_resize $PARTITION $NEW_SIZE
         if (( $? )); then return 1; fi
         
-        sleep 1
+        sleep 2
         echo_white " - Step 3: Grow FILESYSTEM to fit PARTITION..."
         #media_filesystem_resize_topart $PARTITION
         media_filesystem_resize $PARTITION max
@@ -2504,14 +2510,22 @@ media_partition_resize(){
 }
 
 
-media_partition_resize_tofs(){
+media_partition_resize(){
         # resize a partition to match the filesystem size
+        
+        if [[ -z $1 ]]; then
+            echo Usage: diskutil resizePartition partition [min max size]
+            return 1
+        fi
+        
         
         local PARTITION=$(media_device_fullname $1)
         local DEVICE=$(media_device_name $PARTITION)
         local PART_NUM=$(media_device_partnum $PARTITION)
-        local END_FS
-        END_FS=$(($(media_partition_start $PARTITION) + $(media_filesystem_size $PARTITION) + $(( 1024 * 1024 )) ))
+        local SIZE=${2:-min}
+        local END
+     #   local END_FS
+     #   END_FS=$(($(media_partition_start $PARTITION) + $(media_filesystem_size $PARTITION) + $(( 1024 * 1024 )) ))
 
 #echo_blue  part start:$(media_partition_start $PARTITION) 
 #echo_blue fs size:$(media_filesystem_size $PARTITION)   
@@ -2521,17 +2535,47 @@ media_partition_resize_tofs(){
         # skip if fat32
         local FS_TYPE=$(media_filesystem_fs_type $PARTITION)
         if [[ $FS_TYPE = fat32 ]]; then
-            echo_white fat32 partitions automatically resize
+            echo_white fat32 partitions resize automatically
             return
         fi
 
 
-        echo_white "Resizing the partition to fit the file system"
-        run_command "sudo parted $DEVICE unit B resizepart $PART_NUM $END_FS" $LINENO
+        case $SIZE in
+        min)
+            END=$(( $(media_partition_start $PARTITION) + $(media_filesystem_size $PARTITION) ))
+           # END=$(( $END + $((  1024 * 1024 )) ))
+          # END=$(( $END +  1024 ))
+          END=$(( $END +  1 ))
+            ;;
+            
+        max)
+            END=$(($(media_partition_start $PARTITION) + $(media_partition_max $PARTITION) ))
+            #END=$(( $END - $(( 1024 * 1024 )) ))
+            END=$(( $END - 1024 ))
+            ;;
+                
+        *)
+            END=$(bytes $SIZE -b)
+            ;;
+        esac
+        
+
+        # check min
+        if [[ $END -lt $(bytes 512K -b) ]]; then
+            END=$(bytes 512K -b)
+        fi
+
+
+        echo_white "Resizing $PARTITION to $SIZE endpoint='$END' "
+        run_command "sudo parted $DEVICE unit B resizepart $PART_NUM $END" $LINENO
+        if (( $? )); then return 1; fi
+        
+        echo_white "$PARTITION partition resized to $( bytes $(( $END - $(media_partition_start $PARTITION) )) -h)"
+        
 }
 
 
-media_partition_resize_grow(){
+retire_media_partition_resize_grow(){
         # grow a partition to a size
         local SIZE=$1
         local PARTITION=$2
@@ -2599,12 +2643,7 @@ media_partition_format(){
         echo "Usage: diskutil erasePartition partition [format] [name] [-y]"
         exit
     fi
-    
-  #  if [[ -z $PARTITION ]] ; then
-  #      ui_msg_error $LINENO "Partition not specified."
-  #      lsblk -dp
-  ##      exit 1
-   # fi
+
     
     media_device_checktarget $PARTITION part
     if (( $? )); then return 1; fi
@@ -3311,9 +3350,10 @@ case $CMD in
     createPartitionTable)   media_disk_createpartitiontable $2 $3 $4  ;;
     addPartition)           media_disk_addpartition $2 $3 $4 $5 $6 ;;
     delPartition)           media_disk_delpartition $2 $3 $4 $5 $6 ;;
-    resize)                 media_partition_resize $2 $3 $4 ;;
-    resizePartition)        media_partition_resize $2 $3 $4 ;;
-    resizeFilesystem)       media_filesystem_resize $2 $3 $4 ;;
+    
+    resize)                 media_device_resize_part_and_filesystem $2 $3 $4 ;;
+    resizePart)             media_partition_resize $2 $3 $4 ;;
+    resizeFS)               media_filesystem_resize $2 $3 $4 ;;
             
     clone)
         SOURCE=$1
