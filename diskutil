@@ -85,6 +85,7 @@ Usage:  diskutil [quiet] <verb> <options>, where <verb> is as follows:
      X partitionDisk        ((re)Partition a disk, removing all volumes)
      addPartition         (Create a new partition to occupy free space)
      delPartition         (Delete a partition)
+     recoverPartitionTable (parted rescue mode)
 
      hexedit              (edit disk or partition)
 
@@ -1808,15 +1809,12 @@ media_filesystem_resize(){
                 
         ntfs)
         
- echo_blue mize=$SIZE       
+    
              case $SIZE in
                  min)    
                     NEW_SIZE="$(media_filesystem_min $PARTITION)"
                     if [[ $NEW_SIZE  -lt $(bytes 512m -b) ]]; then
- echo_blue raise min                   
                         NEW_SIZE=$(bytes 512m -b)
-                else
- echo_blue min is ok  $NEW_SIZE                       
                     fi
                     NEW_SIZE="-s $(( $NEW_SIZE / 1024 ))k"
                     ;;
@@ -2511,13 +2509,12 @@ media_device_resize_part_and_filesystem(){
 
 
 media_partition_resize(){
-        # resize a partition to match the filesystem size
+        # resize a partition to min max or size
         
         if [[ -z $1 ]]; then
             echo Usage: diskutil resizePartition partition [min max size]
             return 1
         fi
-        
         
         local PARTITION=$(media_device_fullname $1)
         local DEVICE=$(media_device_name $PARTITION)
@@ -2527,9 +2524,6 @@ media_partition_resize(){
      #   local END_FS
      #   END_FS=$(($(media_partition_start $PARTITION) + $(media_filesystem_size $PARTITION) + $(( 1024 * 1024 )) ))
 
-#echo_blue  part start:$(media_partition_start $PARTITION) 
-#echo_blue fs size:$(media_filesystem_size $PARTITION)   
-#echo_blue end fs:$END_FS   
 
 
         # skip if fat32
