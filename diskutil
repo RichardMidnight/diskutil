@@ -777,7 +777,7 @@ media_device_partition_table(){
     #echo $(sudo parted -m $DEVICE print | grep $DEVICE | cut -d: -f6)
     
     local PARTITION=$(media_device_fullname $1)
-    lsblk $PARTITION -n -o PTTYPE
+    lsblk $PARTITION -n -d -o PTTYPE
 }
 
 
@@ -1040,6 +1040,14 @@ media_filesystem_rename() {
 # -------------------------------------------------------------------------------
 # partition low-level functions
 # -------------------------------------------------------------------------------
+
+media_partition_table(){
+    DEVICE=$(media_device_name $1)
+    
+    sudo parted $DEVICE print | grep "Partition Table" | cut -d: -f2 | tr -d " "
+}
+
+
 media_partition_count(){
     local MEDIA=$1
     
@@ -1057,7 +1065,7 @@ media_partition_count(){
 }
 
 
-media_partition_num_start_end_size(){
+media_partition_record(){
     # returns the partition record.  num:start:end:size:fs-type:...
     # use '| cut -d: -f[1-5]' to get a column
     local DEVICE=$(media_device_name $1)
@@ -1076,14 +1084,22 @@ media_partition_num_start_end_size(){
 media_partition_start(){
     local DEVICE=$(media_device_name $1)
     local PARTNUM=$(media_device_partnum $1)    
-    sudo parted -ms $DEVICE unit B print |  grep ^$PARTNUM:  | cut -d ':' -f 2 | tr -d 'B'
+    local START=$(sudo parted -ms $DEVICE unit B print |  grep ^$PARTNUM:  | cut -d ':' -f 2 | tr -d 'B')
+    if [[ -z $START ]]; then
+       START=$(media_device_size $DEVICE)  
+    fi  
+    echo $START
 }
 
 
 media_partition_end(){
     local DEVICE=$(media_device_name $1)
     local PARTNUM=$(media_device_partnum $1)    
-    sudo parted -ms $DEVICE unit B print |  grep ^$PARTNUM:  | cut -d ':' -f 3 | tr -d 'B'
+    local END=$(sudo parted -ms $DEVICE unit B print |  grep ^$PARTNUM:  | cut -d ':' -f 3 | tr -d 'B')
+    if [[ -z $END ]]; then
+       END=1  
+    fi  
+    echo $END
 }
 
 
@@ -1169,15 +1185,34 @@ media_disk_info(){
 
 
 media_disk_verify() {
-    local DISK=$1
-     
-    if [[ -z $DISK ]]; then
+    # verify the disk and partition table are OK
+    
+    if [[ -z $1 ]]; then
         echo "Usage: diskutil verifyDisk disk"
         return
     fi     
+    
+    local DISK=$(media_device_fullname $1)
+     
+    echo_white "Verify Disk '$DISK' ..." 
      
     media_device_checktarget $DISK disk 
     if (( $? )); then return 1; fi
+    
+ 
+    if [[ -e $DISK ]]; then
+        echo_green "Disk $DISK exists"
+    else 
+        echo_red "Disk '$DISK' does not exist."  Line $LINENO
+        return 1
+    fi
+    
+    echo_white "Disk Partition Table Type check ..."
+    local PART_TABLE=$(media_device_partition_table $DISK)
+    case $PART_TABLE in
+        dos|msdos|gpt)  echo_green "Partition table $PART_TABLE OK"  ;;
+        *)              echo_red "Partition Table error... '$PART_TABLE'" line $LINENO ;;
+    esac 
     
     run_command "sudo parted $DISK print free" $LINENO
     
@@ -2009,6 +2044,90 @@ media_partition_resize(){
 }
 
 
+media_partition_check(){
+    # checks the endpoints of a partition
+    
+    local DEVICE=$(media_device_name $1)
+    local PARTNUM=$(media_device_partnum $1)
+    local PARTITION=$(media_device_fullname $1)
+    
+  
+    if [[ ! -e $PARTITION ]]; then
+        echo_red "Partition'$PARTITION' does not exist."  Line $LINENO
+        return 1
+    fi   
+    
+    
+    echo_white "Verifying '$PARTITION'..."
+    
+    
+  #  echo_white "Partition Table Type check ..."
+    local PART_TABLE=$(media_partition_table $DEVICE)
+    case $PART_TABLE in
+        msdos|gpt)    ;;
+        *)           
+            echo_red "Partition Table error... '$PART_TABLE'" line $LINENO 
+            return 1
+            ;;
+    esac 
+  
+  
+    local START=$(media_partition_start $1)
+    local END=$(media_partition_end $1)
+    local SIZE=$(media_partition_size $1)
+    
+    
+    local PARTITION_PREV=$DEVICE$(( $PARTNUM - 1 ))
+    if [[ ! -e $PARTITION_PREV ]]; then
+        PARTITION_PREV=$DEVICE
+    fi
+    local PARTITION_NEXT=$DEVICE$(( $PARTNUM + 1 ))
+    if [[ ! -e $PARTITION_NEXT ]]; then
+        PARTITION_NEXT=$DEVICE
+    fi
+    
+    
+
+#echo start $PARTITION  $(media_partition_start $PARTITION)
+#echo end $PARTITION $(media_partition_end $PARTITION)
+#echo Prev end $PARTITION_PREV  $(media_partition_end $PARTITION_PREV)
+#echo next start $PARTITION_NEXT  $(media_partition_start $PARTITION_NEXT)
+
+    
+    # check against the device endpoints
+    if [[ $START  -lt 0 ]]; then
+        echo ERROR start is too small. line $LINENO
+    fi 
+    if [[ $END -gt $(media_device_size $DEVICE) ]]; then
+        echo ERROR END is too big.  line $LINENO
+    fi
+    
+    
+    # check against the other partitions
+    if [[ $START -lt $(media_partition_end $PARTITION_PREV) ]]; then
+        echo ERROR.  Partition start is too low.  line $LINENO
+    fi
+    if [[ $END -gt $(media_partition_start $PARTITION_NEXT) ]]; then
+        echo ERROR.  Partition start is too big.  Line $LINENO 
+        echo $END
+        echo $(media_partition_start $PARTITION_NEXT)
+    fi 
+    
+    
+    # check size
+    local SIZE_CALC=$(( $END - $START + 1 ))
+    if [[ $SIZE -ne $SIZE_CALC ]]; then
+        echo_red "ERROR.  in size.  size is $(( $SIZE_CALC  - $SIZE  ))b smaller"
+    fi
+    
+    
+    # check partition's FS value
+    local FS=$(echo $(media_partition_record $PARTITION) | cut -d: -f5)
+    if [[ *"$FS"* = "$FILESYSTEMS" ]]; then
+      echo $FS OK
+    fi
+    
+}
 
 
 ########################################################################
@@ -2125,10 +2244,29 @@ media_filesystem_check() {
     esac
     
     
-     if [ $WAS_MOUNTED ]; then
+    if [ $WAS_MOUNTED ]; then
         echo Remounting $PARTITION...
         media_volume_mount $PARTITION
     fi
+    
+    
+    
+    # now check filesystem endpoints vs partition
+    local SIZE_DIFF=$(( $(media_partition_size $PARTITION) - $(media_filesystem_size $PARTITION) ))
+    echo Filesystem is $SIZE_DIFF bytes smaller than the partition.
+    if [[ $SIZE_DIFF -lt o ]]; then
+        echo_red WARNING, filesystem is $SIZE_DIFF bytes larger than the partition!
+        echo_red you need to fix this.
+        local SIZE_AVAIL=$(( $(media_partition_max $PARTITION) - $(media_partition_min $PARTITION) - $SIZE ))
+        if [[ $SIZE_AVAIL -gt 0 ]]; then
+            echo "expandng partition  (untested...) ..."
+           # run_command "media_partition_resize $PARTITION max" $LINENO
+           echo "consider running 'diskutil resizePartition $PARTITION max '"
+        fi 
+        return 1
+    fi
+    
+    
     
     ui_echo "~ filesystem_check OK" green
 }
@@ -2500,7 +2638,7 @@ media_volume_info(){
    
    
     # new idea ...
-    local PART_RECORD=$(media_partition_num_start_end_size $PARTITION)
+    local PART_RECORD=$(media_partition_record $PARTITION)
     local PART_START=$(echo $PART_RECORD | cut -d: -f 2)
     local PART_END=$(echo $PART_RECORD | cut -d: -f 3)
     local PART_SIZE=$(echo $PART_RECORD | cut -d: -f 4)
@@ -2688,12 +2826,79 @@ media_volume_resize(){
       
 }
 
-        
+    
         
 
-media_volume_check(){
+media_volume_verify(){
     #check partition and filesystem incuding sizes
-    x=1
+    
+    local DISK=$(media_device_name $1)
+    local PARTITION=$(media_device_fullname $1)
+    
+    if [[ -z $1 ]]; then
+        echo "Usage:  "
+        return 1
+    fi
+        
+    
+    echo_white Verify volume $PARTITION
+    echo
+ 
+ 
+    #  Verify Disk .....   
+    echo_white Step 1 
+    media_disk_verify $DISK
+    if (( $? )); then
+        echo errors in disk check.  line $LINENO
+        return 1
+    fi
+    
+ 
+    
+    # Verify Partitions ........
+    echo_white "Step 2: Verify partitions on '$DISK' ..."
+    
+    if [[ ! -e $PARTITION ]]; then
+        echo_red "Partition'$PARTITION' does not exist."  Line $LINENO
+        return 1
+    fi   
+    
+    echo_white "Partition Table Type check ..."
+    local PART_TABLE=$(media_partition_table $DISK)
+    case $PART_TABLE in
+        msdos|gpt)   echo_green "Partition table $PART_TABLE OK"   ;;
+        *)           echo_red "Partition Table error... '$PART_TABLE'" line $LINENO ;;
+    esac 
+    
+    
+    local PARTITION_COUNT=$(media_partition_count $DISK)
+    echo "'$PARTITION_COUNT' Partitions found"
+    if [[ $PARTITION_COUNT -eq 0 ]]; then
+        echo_red WARNING... no partitions found.
+    fi
+    
+    
+    # for number in $(seq 1 $MAX) ; do
+    local PARTITION_NUM
+    for PARTITION_NUM in $(seq 1 $PARTITION_COUNT); do
+        media_partition_check $DISK$PARTITION_NUM
+        if (( $? )); then
+            echo_red ERROR checking partition
+        else
+            echo_green GOOD
+        fi    
+    done
+    
+    
+    # Verify Filesystem --------
+
+    echo
+    echo_white Step 3
+    media_filesystem_check $PARTITION
+    if (( $? )); then return 1; fi
+    
+    echo
+    echo_green  Verify volume $PARTITION complete
     
 }
 
@@ -3379,14 +3584,16 @@ case $CMD in
 
     rename|renameVolume)    media_filesystem_rename $2 $3 ;;
     
-    verify)                 media_filesystem_check $TARGET  $3;;
-    repair)                 media_filesystem_repair $TARGET $3;;
+    
+    verifyVolume)           media_volume_verify $TARGET $3 ;;
+    verifyFilesystem)       media_filesystem_check $TARGET  $3;;
+    repairFilesystem)       media_filesystem_repair $TARGET $3;;
     verifyDisk)             media_disk_verify $TARGET $3;; 
     repairDisk)             media_disk_repair $TARGET $3;; 
     
     resizeVolume)           media_volume_resize $2 $3 $4 ;;
-    resizePart)             media_partition_resize $2 $3 $4 ;;
-    resizeFS)               media_filesystem_resize $2 $3 $4 ;;
+    resizePartition)        media_partition_resize $2 $3 $4 ;;
+    resizeFilesystem)       media_filesystem_resize $2 $3 $4 ;;
     
     # destructive verbs
     
