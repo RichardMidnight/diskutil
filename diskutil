@@ -1083,12 +1083,24 @@ media_partition_record(){
 
 media_partition_start(){
     local DEVICE=$(media_device_name $1)
-    local PARTNUM=$(media_device_partnum $1)    
+    local PARTNUM=$(media_device_partnum $1)  
+    local PARTITION=$(media_device_fullname $1)
+    local START
+    
+    # with parted  
     local START=$(sudo parted -ms $DEVICE unit B print |  grep ^$PARTNUM:  | cut -d ':' -f 2 | tr -d 'B')
     if [[ -z $START ]]; then
        START=$(media_device_size $DEVICE)  
     fi  
+  #  echo $START
+    
+    
+    # or with fdisk
+    local SECTOR=$(sudo fdisk $DEVICE -l | grep "$PARTITION" | sed 's/  */ /g' | cut -d" " -f2)
+    START=$(( $SECTOR * 512 ))
     echo $START
+    
+    
 }
 
 
