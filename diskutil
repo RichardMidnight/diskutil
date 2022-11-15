@@ -861,7 +861,7 @@ media_disk_align(){
     local align=${4:-opt}
     local BLOCK_SIZE=$(media_disk_blocksize $DISK)
 
-echo_debug $LINENO starting align $END_BYTE    
+#echo_debug $LINENO starting align $END_BYTE    
     if [[ ! $(is_number $END_BYTE) = true ]]; then
         echo_debug $LINENO not a number
         echo $END_BYTE
@@ -1466,6 +1466,7 @@ media_disk_initialize(){
 
 media_disk_addpartition(){   
     # add a partition.  Use bytes, optimize to 512 or 4*512
+    
     if [[ -z $1 ]]; then
         echo "Usage: diskutil addPartition device [format] [size] [name] [-y]"
         echo "  Format is: fat16 | fat32 | exfat | ntfs | ext2 | ext3 | ext4 | linux-swap"
@@ -1478,7 +1479,10 @@ media_disk_addpartition(){
     local FORMAT=${2:-fat32}    # fat16, fat32, exfat, ntfs, ext2, ext3, ext4
     local SIZE=${3:-max}
     local NAME=${4:-NEW}
-    local SILENT=$5   # -y
+    local SILENT="$5"       # -y
+    local VERBOSE="$6"      # -v
+    
+# echo_debug $LINENO addpartition VERBOSE=$VERBOSE    
     
     #local SEC_SIZE=512
     #local BLOCK_SIZE=$(( $SEC_SIZE * 2048 ))
@@ -1511,14 +1515,12 @@ media_disk_addpartition(){
     # set END
     case $SIZE in
         min)        END=$(( $BEG + $(( 1024 * 1024 )) ))        ;;
-        
         max)        END="100%"                ;;
-        
         *)          END=$(( $BEG + $(bytes $SIZE -b) ))         ;;
     esac
     
 
-echo_debug  $LINENO END byte=$END
+# echo_debug  $LINENO END byte=$END
 
 
     # limit fat16 to 4G
@@ -1532,29 +1534,18 @@ echo_debug  $LINENO END byte=$END
 
 
     # align end to one byte less than block
-echo_debug $LINENO $END   
+#echo_debug $LINENO $END   
  
     END=$(media_disk_align $DEVICE $END rounddown )
     
-echo_debug $LINENO $END      
-  if [[ $(is_number $END) = true ]]; then
-    END=$(( $END -1 ))
+#echo_debug $LINENO $END      
+    if [[ $(is_number $END) = true ]]; then
+        END=$(( $END -1 ))
     fi
     
-echo_debug $LINENO $END        
-    
-  #  if [[ $(is_number $END) = true ]]; then
-  #      END_UNALIGNED=$END
-  #      END=$(( $END_UNALIGNED / $BLOCK_SIZE * $BLOCK_SIZE ))
-  #END=$(( $END - 1 ))
-  #      if [[ $END_UNALIGNED -ne $(( $END + 1 )) ]]; then
-  #          echo_red END REALIGNED from $END_UNALIGNED to $END
-        #else
-        #    echo_green END was aligned
-  #      fi
-  #  fi
 
-echo_debug $LINENO beg=$BEG
+
+#echo_debug $LINENO beg=$BEG
     # warn if beg or end are not aligned
     if [[ $(( $BEG % $BLOCK_SIZE )) -ne 0 ]]; then
         echo_red  $LINENO  Warning BEG not aligned
@@ -1578,28 +1569,29 @@ echo_debug $LINENO beg=$BEG
         END="$END"b
     fi
 
-#sudo fdisk -l $DEVICE   show in sectors
-sudo parted $DEVICE unit b print free
-echo
+    if (( $VERBOSE )); then
+        #sudo fdisk -l $DEVICE   show in sectors
+        sudo parted $DEVICE unit b print free
+    fi
+    
+#echo
+#echo_blue $LINENO Add Partition ...
 
-echo_blue $LINENO Add Partition ...
+#echo_blue $LINENO "Device           =$DEVICE"
+#echo_blue $LINENO "Size             =$(bytes $DEVICE_SIZE -b)"
+#echo_blue $LINENO "sector size      =$SEC_SIZE"
+#echo_blue $LINENO "block size       =$BLOCK_SIZE"
+#echo_blue $LINENO "Partitions       =$LAST_PART_NUM"
+#echo
+#echo_blue $LINENO "New Partition size  =$(bytes $SIZE -h)"
+#echo_blue $LINENO "beg                  $BEG"
+#echo_blue $LINENO "end                  $END"
 
-echo_blue $LINENO "Device           =$DEVICE"
-echo_blue $LINENO "Size             =$(bytes $DEVICE_SIZE -b)"
-echo_blue $LINENO "sector size      =$SEC_SIZE"
-echo_blue $LINENO "block size       =$BLOCK_SIZE"
-echo_blue $LINENO "Partitions       =$LAST_PART_NUM"
-echo
-echo_blue $LINENO "New Partition size  =$(bytes $SIZE -h)"
-echo_blue $LINENO "beg                  $BEG"
-echo_blue $LINENO "end                  $END"
-
-echo_blue $LINENO PART_TYPE=$PART_TYPE
-echo_blue $LINENO FS-TYPE=$FS_TYPE
+#echo_blue $LINENO PART_TYPE=$PART_TYPE
+#echo_blue $LINENO FS-TYPE=$FS_TYPE
 
 
-
-    ui_echo "$PRODUCTNAME $SCRIPTVER Format '$DEVICE' to '$FORMAT'..." white
+  #  ui_echo "$PRODUCTNAME $SCRIPTVER Format '$DEVICE' to '$FORMAT'..." white
     
     if (( ! $(ui_yesno "ADD VOLUME" "Add a volume to '$DEVICE' " "$SILENT") )); then
         ui_msg "ADD VOLUME" "~ Volume not added to $DEVICE. " "" "" log
@@ -1626,14 +1618,15 @@ echo_blue $LINENO FS-TYPE=$FS_TYPE
         echo_red Error. Add Partition unsuccessful  $LINENO
         return 1
     else
-        echo_debug Partition $DEVICE$PART_NUM created.
+        echo $LINENO Partition $DEVICE$PART_NUM created.
     fi
 
 
-    sleep 2
+    sleep 1
     
-    
-    sudo fdisk -l $DEVICE
+    if (( $VERBOSE )); then
+        sudo fdisk -l $DEVICE
+    fi
     
     
     # set FS_TYPE       
@@ -1643,9 +1636,10 @@ echo_blue $LINENO FS-TYPE=$FS_TYPE
 		FS_TYPE=$FORMAT
 	fi
     
-    echo_white " - Formatting the partition to '$FORMAT'..."
+    #echo
+    #echo_white " - Formatting the partition to '$FORMAT'..."
     #ui_echo "$PRODUCTNAME $SCRIPTVER Formatting the partition to '$FORMAT'..." white
-    media_partition_format $PARTITION $FORMAT $NAME -y
+    media_partition_format $PARTITION $FORMAT $NAME "-y" $VERBOSE
     if (( $? )); then
         return 1
     else
@@ -2018,6 +2012,7 @@ media_partition_format(){
         exit
     fi
 
+echo_debug $LINENO VERBOSE=$VERBOSE
     
     media_device_checktarget $PARTITION part
     if (( $? )); then return 1; fi
@@ -2048,7 +2043,7 @@ media_partition_format(){
             ;;
 
         fat32)
-            run_command "sudo mkfs.vfat -F32 VERBOSE -I -n ${FS_NAME^^} $PARTITION" $LINENO
+            run_command "sudo mkfs.vfat -F32 $VERBOSE -I -n ${FS_NAME^^} $PARTITION" $LINENO
             ES=$?
             ;;
             
@@ -2094,8 +2089,8 @@ media_partition_format(){
         ui_msg "ERASE MEDIA" "~ Format complete. '$PARTITION' has been erased." white "" log
     fi
 
-
-    media_volume_mount $PARTITION 
+    
+    # media_volume_mount $PARTITION 
  
       
 }
@@ -3534,16 +3529,6 @@ CMD=$1
 TARGET=$(media_device_fullname $2)
 #SPECS=$3
 
-#TARGET=$2
-
-#echo_blue print inputs
-#echo_blue $1
-#echo_blue $2
-#echo_blue $TARGET
-#exit
-
-
-INSTALL=$(env_installer)
 
 
 case $CMD in
@@ -3612,7 +3597,7 @@ case $CMD in
     
     partitionDisk)          media_disk_createpartitiontable $2 $3 $4 ;;
   
-    addPartition)           media_disk_addpartition $2 $3 $4 $5 $6 ;;
+    addPartition)           media_disk_addpartition $2 $3 $4 $5 $6 $7;;
     delPartition)           media_disk_delpartition $2 $3 ;;
     initDisk)               media_disk_initialize $2 $3 $4  ;;
             
