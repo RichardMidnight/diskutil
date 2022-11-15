@@ -209,6 +209,7 @@ env_install_tools() {
 }    
 
 
+
 env_install_smarttools(){
     # https://www.addictivetips.com/ubuntu-linux-tips/check-hard-drive-health-on-linux/
     
@@ -768,7 +769,9 @@ media_device_partnum(){
 media_device_size(){
     local DEVICE=$(media_device_name $1)
     #sudo parted -ms "$DEVICE" unit B print | grep $DEVICE | cut -d ':' -f 2 | tr -d 'B'
-    lsblk $DEVICE -b -n -d -o size 
+    local SIZE=$(lsblk $DEVICE -b -n -d -o size )
+  #  SIZE=$(( $SIZE - $(( 512 * 50)) ))
+    echo $SIZE
 }
 
 
@@ -838,8 +841,52 @@ media_device_checktarget(){
 
 media_disk_blocksize(){
     # returns the blocksize of the disk
+    local DISK=$(media_device_fullname $1)
     
     echo $(( 512 * 2048 ))
+}
+
+media_disk_align(){
+    # returns an aligned byte number
+    # media_disk_align sda 2345433 roundup
+    local DISK=$(media_device_fullname $1)
+    local END_BYTE=$2
+    local ROUND=$3
+    local align=${4:-opt}
+    local BLOCK_SIZE=$(media_disk_blocksize $DISK)
+
+echo_debug $LINENO starting align $END_BYTE    
+    if [[ ! $(is_number $END_BYTE) = true ]]; then
+        echo_debug $LINENO not a number
+        echo $END_BYTE
+        return
+    fi
+    
+    END_BYTE=$(bytes $END_BYTE -b)
+    
+ #   if [[ $(( $END_BYTE % BLOCK_SIZE )) -eq 0 ]]; then
+ #       echo_debug $LINENO $END_BYTE is aligned... returning
+ #       echo $END_BYTE
+ #       return
+ #   fi
+    
+    #check if END is past device size
+    if [[ $END_BYTE -gt $(media_device_size $DISK) ]]; then
+        echo_debug $LINENO limiting size to end of disk             
+     #   END_BYTE="100%"
+        echo "100%"
+       # END_BYTE=$(media_device_size $DISK)
+        return
+    fi
+    
+    if [[ $ROUND == "roundup" ]]; then
+        END_BYTE=$(( $END_BYTE + $BLOCK_SIZE ))
+    fi
+
+    # truncate to closest smaller BLOCK_SIZE
+    END_BYTE=$(( $END_BYTE / $BLOCK_SIZE * $BLOCK_SIZE )) 
+ 
+    echo $END_BYTE
 }
 
 
@@ -961,9 +1008,6 @@ media_filesystem_min(){
 }
 
 
-
-   
-    
     
     media_filesystem_name(){
     local PARTITION=$(media_device_fullname $1)
@@ -1409,6 +1453,7 @@ media_disk_initialize(){
 }
 
 
+
 media_disk_addpartition(){   
     # add a partition.  Use bytes, optimize to 512 or 4*512
     if [[ -z $1 ]]; then
@@ -1436,11 +1481,11 @@ media_disk_addpartition(){
     local PARTITION=$DEVICE$PART_NUM
     
     local PART_TYPE=primary
-    local FS_TYPE
+
     local BEG=$(media_disk_first_available $DEVICE )
     local END_UNALIGNED
     local END
-
+    local FS_TYPE
 
   
     media_device_checktarget "$DEVICE" disk 
@@ -1455,59 +1500,49 @@ media_disk_addpartition(){
 
     # set END
     case $SIZE in
-        min)    
-            END=$(( $BEG + $(( 1024 * 1024 )) ))   
-            ;;
+        min)        END=$(( $BEG + $(( 1024 * 1024 )) ))        ;;
         
-        max)    
-            END="100%"    
-            ;;
+        max)        END="100%"                ;;
         
-        *)      
-            END=$(( $BEG + $(bytes $SIZE -b) )) 
-            ;;
+        *)          END=$(( $BEG + $(bytes $SIZE -b) ))         ;;
     esac
     
-    
-echo_debug  END byte=$END
 
-        #check if END is past device size
-        if [[ $END_BYTE -gt $DEVICE_SIZE ]]; then
-echo_debug $LINENO limiting size to $(bytes $(( $DEVICE_SIZE - $BEG )) -h )               
-            END="100%"
-        fi
+echo_debug  $LINENO END byte=$END
 
-
-# set FS_TYPE       
-    if [[ $FORMAT = exfat ]]; then
-		FS_TYPE=ntfs
-	else
-		FS_TYPE=$FORMAT
-	fi
 
     # limit fat16 to 4G
-    if [[ $FS_TYPE = fat16 ]]; then
-echo_debug $LINENO Checking fat16 size...
+    if [[ $FORMAT = fat16 ]]; then
+        echo_debug $LINENO Checking fat16 size...
         if [[ $(( $END - $BEG )) -gt $(bytes 4090M -b) ]]; then
             echo limiting fat16 partition to 4g
             END=$(( $BEG + $(bytes 4090M -b) ))
-            END_BYTE=$END
         fi
     fi 
 
 
-
     # align end to one byte less than block
-    if [[ $(is_number $END) = true ]]; then
-        END_UNALIGNED=$END
-        END=$(( $END_UNALIGNED / $BLOCK_SIZE * $BLOCK_SIZE ))
-  END=$(( $END - 1 ))
-        if [[ $END_UNALIGNED -ne $(( $END + 1 )) ]]; then
-            echo_red END REALIGNED from $END_UNALIGNED to $END
+echo_debug $LINENO $END   
+ 
+    END=$(media_disk_align $DEVICE $END rounddown )
+    
+echo_debug $LINENO $END      
+  if [[ $(is_number $END) = true ]]; then
+    END=$(( $END -1 ))
+    fi
+    
+echo_debug $LINENO $END        
+    
+  #  if [[ $(is_number $END) = true ]]; then
+  #      END_UNALIGNED=$END
+  #      END=$(( $END_UNALIGNED / $BLOCK_SIZE * $BLOCK_SIZE ))
+  #END=$(( $END - 1 ))
+  #      if [[ $END_UNALIGNED -ne $(( $END + 1 )) ]]; then
+  #          echo_red END REALIGNED from $END_UNALIGNED to $END
         #else
         #    echo_green END was aligned
-        fi
-    fi
+  #      fi
+  #  fi
 
 echo_debug $LINENO beg=$BEG
     # warn if beg or end are not aligned
@@ -1591,6 +1626,13 @@ echo_blue $LINENO FS-TYPE=$FS_TYPE
     sudo fdisk -l $DEVICE
     
     
+    # set FS_TYPE       
+    if [[ $FORMAT = exfat ]]; then
+		FS_TYPE=ntfs
+	else
+		FS_TYPE=$FORMAT
+	fi
+    
     echo_white " - Formatting the partition to '$FORMAT'..."
     #ui_echo "$PRODUCTNAME $SCRIPTVER Formatting the partition to '$FORMAT'..." white
     media_partition_format $PARTITION $FORMAT $NAME -y
@@ -1633,10 +1675,9 @@ media_disk_delpartition(){
     media_volume_unmount $PARTITION $SILENT
 
     # if swap_partition
-    if [[ ! -z $(swapon --show | $PARTITION) ]]; then
+    if [[ ! -z $(sudo swapon --show | grep $PARTITION) ]]; then
         run_command "sudo swapoff $PARTITION" $LINENO
         if (( $? )); then return 1; fi
-
     fi
 
     
@@ -1951,6 +1992,9 @@ media_partition_rename () {
         run_command 'sudo parted $PARTITION name "$NAME"' $LINENO
     fi
 }
+
+
+
 
 
 
@@ -2431,6 +2475,9 @@ media_filesystem_check() {
 }
 
 
+
+
+
 media_filesystem_repair() {
     local PARTITION=$(media_device_fullname $1)
     local SILENT=$2
@@ -2553,6 +2600,8 @@ echo_debug $LINENO $WAS_MOUNTED
 }
 
 
+
+
 media_filesystem_resize(){
     #Resize filesystemst run using both the -n and 
     
@@ -2602,8 +2651,8 @@ media_filesystem_resize(){
                     #NEW_SIZE=$(( $NEW_SIZE - $(bytes 1m -b ) ))
                     NEW_SIZE=" -s $(( $NEW_SIZE / 1024 ))k"
                     ;;
-               
-                 *) NEW_SIZE="-s $(( $(bytes $SIZE -b) / 1024 ))k"  ;;
+                 *) NEW_SIZE="-s $(( $(bytes $SIZE -b) / 1024 ))k"  
+                    ;;
              esac
         
             echo_white "Resizing fat filesystem to '$NEW_SIZE'... (line $LINENO)"
@@ -2622,7 +2671,7 @@ media_filesystem_resize(){
             
         
         exfat)
-            echo Can not resize exfat file systems.
+            echo "Can not resize exfat file systems. Recomend using Windows."
             return
             ;;
             
@@ -2720,6 +2769,11 @@ media_volume_mount(){
     fi
     
     
+    if [[ $(media_partition_fs_type $PARTITION) = linux-swap* ]]; then
+        return
+    fi
+    
+    
     if [[ ! -z "$(df | grep ^$PARTITION)" ]]; then  # it is already mounted
         return
     fi    
@@ -2728,7 +2782,6 @@ media_volume_mount(){
     if (( $(ui_yesno "MOUNT" "Mount $PARTITION" "$SILENT") )); then
         run_command "udisksctl mount -b $PARTITION" $LINENO 2>/dev/null
     fi
-    
     
 }
         
