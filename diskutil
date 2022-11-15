@@ -230,6 +230,7 @@ sudo zypper install smartmontools
 env_install_fs_support(){
     # installs support for a filesystem
     local FS_TYPE=$1
+    local INSTALL=$(env_installer)
     
     case $FS_TYPE in
         fat16|fat32|vfat)
