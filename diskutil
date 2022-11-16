@@ -9,7 +9,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.10"  #2022-11-15
+VER="0.1.11"  #2022-11-15
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -47,7 +47,7 @@ BUFFER=$((10*1024*1024))  # 10 meg
 
 
 disk_utility_help(){
-echo "Disk Utility Tool
+echo "Disk Utility Tool  ver $VER
 Utility to manage local disks and volumes. Based on Apple's diskutil
 A Volume refers to a partition plus it's filesystem.
 Most commands DO NOT require an administrator or root user
@@ -562,6 +562,59 @@ bytes(){
             t|T|tb|TB)      echo $(($BASE*1024*1024*1024*2014))  ;;
             *)              error Error $LINENO            ;;
         esac
+    fi
+}
+
+
+
+
+diskutil_update() {
+    INTERFACE=${1:-"cli"}
+    SUMMARY=${2:-"yes"}
+    local YES=${3:-"-n"}
+      
+    if [[ $SUMMARY = yes ]]; then
+        ui_echo "Checking for $PRODUCTNAME $SCRIPTVER updates..." white
+    fi
+      
+    local SERVER_VER=
+    wget https://raw.githubusercontent.com/RichardMidnight/diskutil/main/$SCRIPTNAME -O $SCRIPTNAME.tmp 2> /dev/null 
+    ES=$?
+    if (( $ES ));  then
+        echo_if_cli "ERROR: Can't connect to server..."
+        return $ES
+    fi    
+
+    # did we get the new version from the server?
+    if [[ -f $SCRIPTNAME.tmp ]]; then
+        SERVER_VER=$(bash $SCRIPTNAME.tmp -v)
+    else
+        return 1
+    fi
+
+    if [[ $(get_ver_to_int $SERVER_VER) -gt $(get_ver_to_int $SCRIPTVER) ]]; then
+        if [[ $YES = -y ]]; then
+            RESULT="y"
+        else
+            RESULT=$(ui_yesno "UPDATE AVAILABLE" "Update $PRODUCTNAME from '$SCRIPTVER'  to '$SERVER_VER' ")
+            echo
+        fi
+        
+        if [[ $RESULT = y ]]; then 
+            ui_echo "Updating $PRODUCTNAME to v $SERVER_VER..." white
+     #       sudo mv $SCRIPTNAME.tmp /usr/local/bin/$SCRIPTNAME
+     #       sudo chmod +x /usr/local/bin/$SCRIPTNAME
+     
+            sudo mv $SCRIPTNAME.tmp SCRIPTNAME
+            echo "$($SCRIPTNAME -v) installed. Press any key to exit... "
+            read -s -n 1
+            exit 0
+        fi
+    else  
+        rm $SCRIPTNAME.tmp
+        if [[ $SUMMARY = yes ]]; then
+            ui_msg UPDATE "~ $PRODUCTNAME $SCRIPTVER is up to date.  Server ver is '$SERVER_VER' " "" "" log
+        fi
     fi
 }
 
@@ -3490,6 +3543,10 @@ menu() {
     done
     
 }
+
+
+# check for updates
+diskutil_update
 
 
 # install filesystem support 
