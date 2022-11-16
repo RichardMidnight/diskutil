@@ -1179,17 +1179,14 @@ media_partition_start(){
     local DEVICE=$(media_device_name $1)
     local PARTNUM=$(media_device_partnum $1)   
     local PARTITION=$(media_device_fullname $1) 
- #   local UNITS=$2  # -b or -s for sectors
- #   local MULTIPLIER=512
 
-#if [[ $UNITS = -s ]]; then
-#    MULTIPLIER=1
-#fi
 #echo_debug $LINENO $DEVICE
 #echo_debug $LINENO partition number=$PARTNUM
+#echo_debug $LINENO partition number=$(media_disk_partcount $DEVICE)
+
     # if whole disk
     if [[ -z $PARTNUM ]] || [[ $PARTNUM -gt $(media_disk_partcount $DEVICE) ]]; then
-echo_debug $LINENO USING REST OF DISK    
+#echo_debug $LINENO USING REST OF DISK    
         echo $(media_device_size $DEVICE)
         return
     fi
@@ -1368,7 +1365,7 @@ media_disk_verify() {
     if [[ -e $DISK ]]; then
         echo_green OK
     else 
-        echo_red "Disk '$DISK' does not exist."  Line $LINENO
+        echo_red "ERROR: Disk '$DISK' does not exist."  Line $LINENO
         return 1
     fi
     
@@ -1382,7 +1379,6 @@ media_disk_verify() {
     if (( $VERBOSE )); then
         run_command "sudo parted $DISK print free" $LINENO
     fi
-    
 }
 
 
@@ -2289,7 +2285,7 @@ media_partition_check(){
     
     # check size
     echo -n $( bytes $SIZE -h)...
-    local SIZE_CALC=$(( $END - $START ))
+    local SIZE_CALC=$(( $END - $START + 1 ))
     if [[ $SIZE -ne $SIZE_CALC ]]; then
         echo_red "ERROR line $LINENO.  Size is $(( $SIZE_CALC  - $SIZE  ))b smaller"
     #else
@@ -2474,11 +2470,11 @@ media_filesystem_repair() {
     local WAS_MOUNTED=$(media_filesystem_ismounted $PARTITION)
     local VERBOSE="$3"    # -y or blank
 
-echo_debug $LINENO $PARTITION
-echo_debug $LINENO $WAS_MOUNTED
+#echo_debug $LINENO $PARTITION
+#echo_debug $LINENO $WAS_MOUNTED
 
     if [[ -z $PARTITION ]]; then
-        echo "Usage: diskutil repairFilesystem partition"
+        echo "Usage: diskutil repairFilesystem partition [-y] [-v]"
         return
     fi
      
@@ -2486,7 +2482,6 @@ echo_debug $LINENO $WAS_MOUNTED
     if [[ $VERBOSE != "-v" ]]; then
         VERBOSE=
     fi
-         
      
     media_device_checktarget $PARTITION part 
     if (( $? )); then return 1; fi 
@@ -2499,7 +2494,6 @@ echo_debug $LINENO $WAS_MOUNTED
         WAS_MOUNTED=true
         #umount $PARTITION
         media_volume_unmount $PARTITION -y
-
     fi
     
     if [[ $(media_filesystem_ismounted $PARTITION) = true ]]; then
@@ -2509,33 +2503,30 @@ echo_debug $LINENO $WAS_MOUNTED
     
     
     local FS_TYPE=$(media_partition_fs_type $PARTITION)
-    echo_white Repairing $FS_TYPE file system... 
+    echo_white "Repairing '$FS_TYPE' file system on $PARTITION ... "
     
     case $FS_TYPE in
         fat16|fat32|vfat) 
-         #   echo "Repairing fat filesystem..."
             run_command "sudo fsck.fat -a -w $VERBOSE $PARTITION" $LINENO  # from gparted
             rc=$?
             if (( $rc )); then
-                error $LINENO "fsck.fat failed with rc $rc"
-                echo Recommend using Windows or DOS to run "chkdsk /f"
+                error $LINENO "Failed with rc $rc"
+                echo "Recommend using Windows to run 'chkdsk /f'"
                 return 1 
             fi
             ;;
             
         exfat)            
-       #     echo "Repairing exfat filesystem..."
             run_command "sudo fsck.exfat -a $PARTITION"    $LINENO
             rc=$?
             if (( $rc )); then
-                error $LINENO "fsck.exfat failed with rc $rc"
-                echo Recommend using Windows or DOS to run "chkdsk /f"
+                error $LINENO "Failed with rc $rc"
+                echo "Recommend using Windows to run 'chkdsk /f'"
                 return 1
             fi
             ;;
                 
         ntfs)
-            echo "Repairing ntfs filesystem..."
             run_command "sudo ntfsfix -d $PARTITION" $LINENO
              if (( $? )); then return 1 ; fi
 
@@ -2543,8 +2534,8 @@ echo_debug $LINENO $WAS_MOUNTED
             run_command "sudo ntfsresize -i -f -v $PARTITION" $LINENO    # from gparted
             rc=$?
             if (( $rc )); then          
-                error $LINENO "failed with rc $rc"
-                echo Recommend using Windows or DOS to run "chkdsk /f"
+                error $LINENO "Failed with rc $rc"
+                echo "Recommend using Windows to run 'chkdsk /f'"
                 return 1            
             fi    
                 
@@ -2552,34 +2543,21 @@ echo_debug $LINENO $WAS_MOUNTED
             run_command "sudo ntfsresize -c $PARTITION" $LINENO   
             rc=$?
             if (( $rc )); then
-                error $LINENO "ntfsresize failed with rc $rc"
-                echo Error repairing filesystem.
-                echo Recommend using Windows to run chkdsk 
+                error $LINENO "Failed with rc $rc"
+                echo "Recommend using Windows to run 'chkdsk /f'"
                 return 1
             fi    
-           
             ;;
             
-        ext2|ext3|ext4)
-     #       echo "Repairing ext filesystem..."         
+        ext2|ext3|ext4)    
             run_command "sudo e2fsck -f -y $VERBOSE -C 0 $PARTITION" $LINENO  # from gparted
             rc=$?
             if (( $rc )); then
-                error $LINENO "fsck.exfat failed with rc $rc"
-                echo Recommend using Windows or DOS to run "chkdsk /f"
-                return 1
+                error $LINENO "Failed with rc $rc"
+               # info "Trying to recover corrupted filesystem - Phase 2"
+               # e2fsck -f -y -b 32768 "$PARTITION"
+               # (( $? < 4 )) && return
             fi
-
-            #if [[ $repair == true ]]; then
-            #    info "Trying to recover corrupted filesystem - Phase 2"
-            #    sudo e2fsck -fy -b 32768 "$PARTITION"
-            #    (( $? < 4 )) && return
-            #fi
-                
-            #   run_command "sudo resize2fs $PARTITION"  $LINENO
-            #   run_command "sudo e2fsck -pf $PARTITION" $LINENO
-            #   run_command "sudo resize2fs $PARTITION"  $LINENO
-     
             ;;
             
         *)
@@ -2786,8 +2764,8 @@ media_volume_mount(){
         
         
 media_volume_unmount(){
-     local PARTITION=$(media_device_fullname $1)
-     local SILENT="$2"
+    local PARTITION=$(media_device_fullname $1)
+    local SILENT="$2"
     
     if [[ -z $PARTITION ]]; then
         echo "Usage: diskutil umount volume"
@@ -3114,23 +3092,20 @@ media_volume_verify(){
     
     echo_white Verify volume $PARTITION 
  
-    media_device_checktarget $PARTITION part
-    if (( $? )); then return 1; fi
+  #  media_device_checktarget $PARTITION part
+  #  if (( $? )); then return 1; fi
+ 
  
     #  Verify Disk ..... 
     echo  
     echo_white Verify step 1 
     media_disk_verify $DISK $SILENT $VERBOSE
-    if (( $? )); then
-        echo errors in disk check.  line $LINENO
-        return 1
-    fi
+    if (( $? )); then return 1 ; fi
     
- 
     
     # Verify Partitions ........
     echo
-    echo_white "Verify step 2: Verify partitions on '$DISK' ..."
+    echo_white "Verify step 2: \nVerify partitions on '$DISK' ..."
     sleep 1
     if [[ ! -e $PARTITION ]]; then
         echo_red "Partition '$PARTITION' does not exist."  Line $LINENO
@@ -3151,7 +3126,6 @@ media_volume_verify(){
         echo_red WARNING... no partitions found.
     fi
     
-    
     # for number in $(seq 1 $MAX) ; do
     local PARTITION_NUM
     for PARTITION_NUM in $(seq 1 $PARTITION_COUNT); do
@@ -3163,7 +3137,6 @@ media_volume_verify(){
     
     
     # Verify Filesystem --------
-
     echo
     echo_white Verify step 3
     media_filesystem_check $PARTITION $SILENT $VERBOSE
@@ -3192,6 +3165,7 @@ media_volume_repair(){
     # check that partition table is OK
     
     # check that there is a filesystem
+    
     
     # repair the filesystem
     media_filesystem_repair $PARTITION $SILENT $VERBOSE
