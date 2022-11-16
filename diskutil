@@ -606,7 +606,7 @@ diskutil_update() {
      #       sudo mv $SCRIPTNAME.tmp /usr/local/bin/$SCRIPTNAME
      #       sudo chmod +x /usr/local/bin/$SCRIPTNAME
      
-            sudo mv $SCRIPTNAME.tmp SCRIPTNAME
+            sudo mv $SCRIPTNAME.tmp $SCRIPTNAME
             echo "$($SCRIPTNAME -v) installed. Press any key to exit... "
             read -s -n 1
             exit 0
