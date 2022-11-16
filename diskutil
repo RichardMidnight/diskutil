@@ -601,7 +601,7 @@ diskutil_update() {
             echo
         fi
         
-        if [[ $RESULT = y ]]; then 
+        if [[ $RESULT = 1 ]]; then 
             ui_echo "Updating $PRODUCTNAME to v $SERVER_VER..." white
      #       sudo mv $SCRIPTNAME.tmp /usr/local/bin/$SCRIPTNAME
      #       sudo chmod +x /usr/local/bin/$SCRIPTNAME
