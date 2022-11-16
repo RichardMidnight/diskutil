@@ -581,7 +581,8 @@ diskutil_update() {
     wget https://raw.githubusercontent.com/RichardMidnight/diskutil/main/$SCRIPTNAME -O $SCRIPTNAME.tmp 2> /dev/null 
     ES=$?
     if (( $ES ));  then
-        echo_if_cli "ERROR: Can't connect to server..."
+        #echo_if_cli "ERROR: Can't connect to server..."
+         echo_debug "ERROR: Can't connect to server..."
         return $ES
     fi    
 
@@ -3546,7 +3547,9 @@ menu() {
 
 
 # check for updates
-diskutil_update
+if [[ ! $1 = -v ]]; then
+    diskutil_update
+fi
 
 
 # install filesystem support 
