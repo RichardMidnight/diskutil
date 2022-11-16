@@ -593,11 +593,11 @@ diskutil_update() {
         return 1
     fi
 
-    if [[ $(get_ver_to_int $SERVER_VER) -gt $(get_ver_to_int $SCRIPTVER) ]]; then
+    if [[ $(get_ver_to_int $SERVER_VER) -gt $(get_ver_to_int $VER) ]]; then
         if [[ $YES = -y ]]; then
             RESULT="y"
         else
-            RESULT=$(ui_yesno "UPDATE AVAILABLE" "Update $PRODUCTNAME from '$SCRIPTVER'  to '$SERVER_VER' ")
+            RESULT=$(ui_yesno "UPDATE AVAILABLE" "Update $PRODUCTNAME from '$VER'  to '$SERVER_VER' ")
             echo
         fi
         
@@ -614,7 +614,7 @@ diskutil_update() {
     else  
         rm $SCRIPTNAME.tmp
         if [[ $SUMMARY = yes ]]; then
-            ui_msg UPDATE "~ $PRODUCTNAME $SCRIPTVER is up to date.  Server ver is '$SERVER_VER' " "" "" log
+            ui_msg UPDATE "~ $PRODUCTNAME $VER is up to date.  Server ver is '$SERVER_VER' " "" "" log
         fi
     fi
 }
