@@ -9,7 +9,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.12"  #2022-11-15
+VER="0.1.13"  #2022-11-15
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -232,39 +232,47 @@ env_install_fs_support(){
     local FS_TYPE=$1
     local INSTALL=$(env_installer)
     
+    local YESNO
+    local VERBOSE
+    getargs $*
+    
     case $FS_TYPE in
         fat16|fat32|vfat)
-            if [[ -z $(env_which mkfs.vfat) ]] ; then
-                echo Installing vfat support ...
-                sudo $INSTALL dosfstools
-                sudo $INSTALL fatresize
+            if [[ -z $(env_which mkfs.vfat) ]] || [[ -z $(env_which fatresize) ]]; then
+                if (( $(ui_yesno "Install support for $FS_TYPE" $YESNO) )); then
+                    echo Installing vfat support ...
+                    sudo $INSTALL dosfstools
+                    
+                    echo Installing fat-resize support ...
+                    sudo $INSTALL fatresize
+                fi
             fi
-         #   if [[ -z $(env_which fatresize) ]] ; then
-         #       echo Installing fat-resize support ...
-         #       sudo $INSTALL fatresize
-         #   fi
             ;;
             
         exfat)
             #https://unix.stackexchange.com/questions/61209/create-and-format-exfat-partition-from-linux
             if [[ -z $(env_which mkfs.exfat) ]] ; then
-                echo Installing exfat support ...
-                sudo $INSTALL exfat-utils 
-                sudo $INSTALL exfat-fuse 
-                #sudo modprobe fuse 
-                #echo "fuse" | sudo tee -a /etc/modules
+                if (( $(ui_yesno "Install support for $FS_TYPE" $YESNO) )); then
+                    echo Installing exfat support ...
+                    sudo $INSTALL exfat-utils 
+                    sudo $INSTALL exfat-fuse 
+                    #sudo modprobe fuse 
+                    #echo "fuse" | sudo tee -a /etc/modules
+                fi
             fi
             ;;    
            
         ntfs)    
             if [[ -z $(env_which mkfs.ntfs) ]] ; then
-                #sudo apt-get install fuse ntfs-3g
-                echo Installing ntfs support...
-                sudo $INSTALL fuse 
-                sudo $INSTALL ntfs-3g 
-                sudo $INSTALL ntfsprogs  #ntfsprogs is for arch
-                #sudo modprobe fuse 
-                #echo "fuse" | sudo tee -a /etc/modules
+                if (( $(ui_yesno "Install support for $FS_TYPE" $YESNO) )); then
+                    #sudo apt-get install fuse ntfs-3g
+                    echo Installing ntfs support...
+                    sudo $INSTALL fuse 
+                    sudo $INSTALL ntfs-3g 
+                    sudo $INSTALL ntfsprogs  #ntfsprogs is for arch
+                    #sudo modprobe fuse 
+                    #echo "fuse" | sudo tee -a /etc/modules
+                fi    
             fi  
             ;;
     
@@ -2067,10 +2075,29 @@ media_partition_fs_type(){
     
     # if parted returned nothing... use lsblk
     if [[ -z $FS_TYPE ]]; then
-        sleep .5  # this pause seems to help reliability
+      #  sleep 1  # this pause seems to help reliability
         FS_TYPE=$(lsblk -n $PARTITION -o FSTYPE)
  #       echo_debug "$LINENO '$FS_TYPE' Using lsblk"
     fi
+    
+  # second try by both methods...  
+
+    if [[ -z $FS_TYPE ]]; then
+        sleep 1  # this pause seems to help reliability
+        FS_TYPE=$(sudo parted $DEVICE -m print | grep ^$PARTNUM: | cut -d: -f5 | tr -d ' ')
+ #       echo_debug "$LINENO '$FS_TYPE' Using lsblk"
+    fi
+    
+    # if parted returned nothing... use lsblk
+    if [[ -z $FS_TYPE ]]; then
+        sleep 1  # this pause seems to help reliability
+        FS_TYPE=$(lsblk -n $PARTITION -o FSTYPE)
+ #       echo_debug "$LINENO '$FS_TYPE' Using lsblk"
+    fi
+   
+   if [[ -z $FS_TYPE ]]; then
+        echo_debug $LINENO error getting FS_TYPE for $PARTITION
+   fi
    
     echo $FS_TYPE
 }
@@ -2114,7 +2141,7 @@ media_partition_format(){
     if (( $? )); then return 1; fi
     
 
-    if ! (( $(ui_yesno "ERASE MEDIA" "WARNING!  Do you want to erase $PARTITION" $YES) )); then
+    if ! (( $(ui_yesno "ERASE MEDIA" "WARNING!  Do you want to erase $PARTITION" $YESNO) )); then
         return
     fi
 
@@ -2212,7 +2239,7 @@ media_partition_reformat(){
         return 1
     fi
 
-    media_partition_format $PARTITION $FS "$NAME"  $YESNO $VERBOSE
+    media_partition_format $PARTITION $FS $NAME $YESNO $VERBOSE
 }
 
 
@@ -2230,6 +2257,7 @@ media_partition_resize(){
         local SIZE=${2:-min}
         local BLOCK_SIZE=$(media_disk_blocksize $DEVICE)
         local END
+        local FS_TYPE
  
         local YESNO
         local VERBOSE
@@ -2237,7 +2265,7 @@ media_partition_resize(){
 
 
         # skip if fat32
-        local FS_TYPE=$(media_partition_fs_type $PARTITION)
+        FS_TYPE=$(media_partition_fs_type $PARTITION)
         if [[ $FS_TYPE = fat32 ]] || [[ $FS_TYPE = fat16 ]]; then
             echo_white fat16 and fat32 partitions resize automatically
             return
@@ -2310,7 +2338,8 @@ media_partition_resize(){
         if (( $? )); then return 1; fi
         
         
-        if [[ $FS_TYPE -eq ntfs ]]; then
+        if [[ $FS_TYPE = ntfs ]]; then
+        echo_debug $LINENO $PARTITION $FS_TYPE
             echo_white Fixing ntfs file system ...
             run_command "sudo ntfsfix -d $PARTITION" $LINENO
             if (( $? )); then return 1; fi
@@ -2731,12 +2760,12 @@ media_filesystem_resize(){
     case $FS_TYPE in
     
         fat16|fat32)        
-            # You can't resize FAT32 partition lesser than 512Mb
+            # You can't resize FAT32 partition lesser than 512Mb ??
              case $SIZE in
                  min)    
                     NEW_SIZE=$(sudo fatresize -i $PARTITION | grep Min | cut -d: -f2 | tr -d " ")
-                    if [[ $NEW_SIZE -lt $(bytes 550M -b) ]]; then
-                        NEW_SIZE=$(bytes 550M -b)
+                    if [[ $NEW_SIZE -lt $(bytes 512M -b) ]]; then
+                        NEW_SIZE=$(bytes 540M -b)
                     fi 
                     NEW_SIZE=" -s $(( $NEW_SIZE / 1024 ))k"
                     ;;
@@ -2759,9 +2788,9 @@ media_filesystem_resize(){
                 return 1
             fi   
             
-            sleep 2
-            run_command "sudo fatresize -i $PARTITION | grep -v 'Max size:'" $LINENO
-            if (( $? )); then return 1; fi
+         #   sleep 2
+         #   run_command "sudo fatresize -i $PARTITION | grep -v 'Max size:'" $LINENO
+         #   if (( $? )); then return 1; fi
             ;;
             
         
@@ -3099,7 +3128,6 @@ media_volume_resize(){
         echo $PARTITION is mounted
         return 1
     fi
-    
     
     FS_SIZE=$(media_filesystem_size $PARTITION)
     
@@ -3709,15 +3737,15 @@ case $CMD in
     verifyDisk)             media_disk_verify $2 $3;; 
     repairDisk)             media_disk_repair $2 $3;; 
     
-    resizeVolume)           media_volume_resize $2 $3 $4 ;;
-    resizePart)             media_partition_resize $2 $3 $4 ;;
-    resizeFS)               media_filesystem_resize $2 $3 $4 ;;
+    resizeVolume)           media_volume_resize $2 $3 $4 $5;;
+    resizePart)             media_partition_resize $2 $3 $4 $5 ;;
+    resizeFS)               media_filesystem_resize $2 $3 $4 $5;;
     
     # destructive verbs
     
     eraseDisk)              media_disk_format $2 $3 $4 $5 $6 ;;
     eraseVolume)            media_partition_format $2 $3 $4 $5 $6 ;;
-    reformat)               media_partition_reformat $2 $3 ;;
+    reformat)               media_partition_reformat $2 $3 $4 $5 ;;
     
     zeroDisk)               media_disk_wipe "$2" zero $3 $4;;    #shred or dd or 
     randomDisk)             media_disk_wipe "$2" random $3 $4 ;;
