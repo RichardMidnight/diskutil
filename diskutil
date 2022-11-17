@@ -9,7 +9,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.15"  #2022-11-15
+VER="0.1.16"  #2022-11-15
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -392,7 +392,7 @@ env_which () {
     
     # if /usr/sbin is not in path, add it
   #if [[ "$STR" == *"$SUB"* ]]; then
-    if [[ "$PATH" == *"/usr/sbin"* ]]; then
+    if [[ "$PATH" != *"/usr/sbin"* ]]; then
         PATH=$PATH:/usr/sbin
     fi
     
