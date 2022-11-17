@@ -58,8 +58,8 @@ This simplifies the use of: parted, lsblk, udisksctl mount, udisksctl unmount, u
 Usage:  diskutil [quiet] <verb> <options> [-y] [-v], where <verb> is as follows:
 
      list                 (List available disks and partitions)
-     info[rmation]        (Get information on a specific disk or partition)
-     listFilesystems      (List file systems available for formatting)
+     info[rmation]        (Get information on a specific disk or volume)
+     listFilesystems      (List supported file systems)
 
      u[n]mount            (Unmount a single volume)
      unmountDisk          (Unmount an entire disk (all volumes))
@@ -1190,7 +1190,7 @@ media_filesystem_rename() {
         case $FS_TYPE in
             fat16|fat32|vfat)    run_command "sudo fatlabel $PARTITION '${NAME^^}'" ;;
             exfat)          run_command "sudo exfatlabel $PARTITION '$NAME'" ;;
-            ntfs)           run_command "sudo ntfslabel $PARTITION '$NAME'" ;;
+            ntfs)           run_command "sudo ntfslabel $VERBOSE $PARTITION '$NAME'" ;;
             ext4)           run_command "sudo e2label $PARTITION '$NAME'"    ;;
             *)              echo Unknown filesystem '$FS_TYPE' ;;
         esac
@@ -1539,6 +1539,8 @@ media_disk_initialize(){
     run_command "sudo parted -s $DEVICE mklabel $PART_TABLE" $LINENO
     if (( $? )); then return 1; fi
     
+    # should confirm it worked....
+    
 }
 
 
@@ -1758,7 +1760,7 @@ media_disk_delpartition(){
 
     # if swap_partition
     if [[ ! -z $(sudo swapon --show | grep $PARTITION) ]]; then
-        run_command "sudo swapoff $PARTITION" $LINENO
+        run_command "sudo swapoff $VERBOSE $PARTITION" $LINENO
         if (( $? )); then return 1; fi
     fi
 
@@ -1961,7 +1963,7 @@ echo_debug $LINENO $1
     local DEVICE=$(media_device_fullname $1)
     local PATTERN=${2:-zero}   # zero | random | shred
     local SIZE=${3:-max}
-#    local YESNO=$4  #-y or -n
+
     local YESNO
     local VERBOSE
     getargs $*
@@ -1977,11 +1979,12 @@ echo_debug $LINENO $1
     local NAME=$(lsblk $DEVICE -dnpo VENDOR,MODEL,SIZE)
   #  local PART1=$DEVICE\1    
     
-    DEVICE_SIZE=$(lsblk  $DEVICE -dno  size )
-    DEVICE_SIZE_BYTES=$(lsblk  $DEVICE -dbno  size )
+    #DEVICE_SIZE=$(lsblk  $DEVICE -dno  size )
+    #DEVICE_SIZE_BYTES=$(lsblk  $DEVICE -dbno  size )
     
+    # set size
     if [[ $SIZE = max ]]; then
-        SIZE=$DEVICE_SIZE_BYTES
+        SIZE=$(media_device_size $DEVICE)
     else
         SIZE=$(bytes $SIZE -b)
     fi
@@ -2015,11 +2018,11 @@ echo_debug $LINENO block count=$DEVICE_BLOCK_COUNT
 
     echo Unmounting $DEVICE...
     media_disk_unmount $DEVICE $YESNO -y
-   # if [[ $(media_dev; then return 1; fi
+  
     
 
     if [[ $PATTERN = "shred" ]];then
-        run_command "shred -v $DEVICE" $LINENO 
+        run_command "shred $VERBOSE $DEVICE" $LINENO 
         return
     fi
 
@@ -2417,6 +2420,14 @@ media_partition_check(){
     else
         echo -n .
     fi
+    
+    
+    #print alignment
+    echo -n "min alighnment is: "
+    run_command "sudo parted $DEVICE align-check min $PARTNUM" $LINENO
+    echo -n "opt alignment is: "
+    run_command "sudo parted $DEVICE align-check opt $PARTNUM" $LINENO
+    
     
     
     # check against the other partitions
