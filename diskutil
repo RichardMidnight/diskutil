@@ -9,7 +9,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.13"  #2022-11-15
+VER="0.1.14"  #2022-11-15
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -881,12 +881,16 @@ media_device_name(){
 }
 
 
-media_device_partition_table(){
-    #local DEVICE=$(media_device_name $1)
-    #echo $(sudo parted -m $DEVICE print | grep $DEVICE | cut -d: -f6)
+media_disk_pt_type(){
+    # returns the partition table type
+    #local PARTITION=$(media_device_fullname $1)
+    local DISK=$(media_device_name $1)
     
-    local PARTITION=$(media_device_fullname $1)
-    lsblk $PARTITION -n -d -o PTTYPE
+    
+    #echo $(sudo parted -m $DISK print | grep $DISK | cut -d: -f6)
+    
+
+    lsblk $DISK -n -d -o PTTYPE
 }
 
 
@@ -1207,7 +1211,7 @@ media_filesystem_rename() {
 # partition low-level functions
 # -------------------------------------------------------------------------------
 
-media_partition_table(){
+retire_media_partition_table(){
     DEVICE=$(media_device_name $1)
     
     #using fdisk
@@ -1407,7 +1411,7 @@ media_disk_info(){
 
     #echo DiskInfo:
     echo Device: $DEVICE
-    echo Partition table type: $(media_device_partition_table $DEVICE)
+    echo Partition table type: $(media_disk_pt_type $DEVICE)
     echo
    
     #run_command "lsblk $TARGET -o name,path,mountpoint,fstype,pttype,ptuuid,partuuid,size,label,vendor,model" $LINENO
@@ -1428,7 +1432,7 @@ media_disk_verify() {
     # verify the disk and partition table are OK
     
     if [[ -z $1 ]]; then
-        echo "Usage: diskutil verifyDisk disk"
+        echo "Usage: diskutil verifyDisk disk [-v]"
         return
     fi     
     
@@ -1453,15 +1457,24 @@ media_disk_verify() {
     fi
     
     echo -n "Checking Partition Table Type ..."
-    local PART_TABLE=$(media_device_partition_table $DISK)
+    local PART_TABLE=$(media_disk_pt_type $DISK)  # this is running lsblk
+    if (( $? )); then return 1; fi
     case $PART_TABLE in
-        dos|msdos|gpt)  echo_green " $PART_TABLE OK"  ;;
+        dos|msdos|gpt)  echo_green "$PART_TABLE OK"  ;;
         *)              echo_red "Partition Table error... '$PART_TABLE'" line $LINENO ;;
     esac 
     
-    if (( $VERBOSE )); then
+
+    echo -n "Checking Partition Table ..."
+    echo_green $(media_partition_pt_type $DISK) OK
+    if (( $? )); then return 1; fi
+    
+    if [[ $VERBOSE = -v ]]; then
         run_command "sudo parted $DISK print free" $LINENO
+        if (( $? )); then return 1; fi
     fi
+    
+    echo "The disk '$DISK' apears to be OK"
 }
 
 
@@ -1782,31 +1795,31 @@ media_disk_delpartition(){
 
 
 media_disk_mount(){
-    local TARGET=$(media_device_fullname $1)
-    #local YESNO=$2
+    if [[ -z $1 ]]; then
+        echo "Usage: diskutil mountDisk device [-y]"
+        echo "Mounts all the directly-mountable volumes on the disk."
+        return
+    fi
+        
+    DISK=$(media_device_name $1)
+    
     local YESNO
     local VERBOSE
     getargs $*    
     
-    if [[ -z $1 ]]; then
-        echo "Usage: diskutil mountDisk device [-y]"
-        echo "Attempts to mount all filesystems on device"
-        return
-    fi
     
-    media_device_checktarget $TARGET disk
-    if (( $? )); then
-        exit 1
-    fi
+    media_device_checktarget $DISK disk
+    if (( $? )); then exit 1; fi
     
     
-    if (( $(ui_yesno "MOUNT" "Mount all volumes on $TARGET" $YESNO) )); then
+    if (( $(ui_yesno "MOUNT" "Mount all volumes on $DISK" $YESNO) )); then
    
-        PARTITION_COUNT=$(media_disk_partcount $TARGET)
+        PARTITION_COUNT=$(media_disk_partcount $DISK)
         
         for ((PART=1 ; PART<=$PARTITION_COUNT; PART++)) ; do
-             if [ -z "$(df | grep ^$TARGET$PART)" ]; then
-                run_command "udisksctl mount -b $TARGET$PART" $LINENO 2>/dev/null
+             if [ -z "$(df | grep ^$DISK$PART)" ]; then
+                #run_command "udisksctl mount -b $DISK$PART" $LINENO 2>/dev/null
+                media_volume_mount $DISK$PART $YESNO $VERBOSE
              fi   
         done
     
@@ -1815,31 +1828,30 @@ media_disk_mount(){
 
     
 media_disk_unmount(){
-    # unmounts all volumes on a disk
-    
     if [[ -z $1 ]]; then
         echo "Usage: diskutil umountDisk device [-y]"
-        echo "Attempt to unmount all the directly-mountable volumes on the disk."
+        echo "Unmounts all the directly-mountable volumes on the disk."
         return
     fi
     
-    local TARGET=$(media_device_fullname $1)
-    #local YESNO=$2
+    DISK=$(media_device_name $1)
+ 
     local YESNO
     local VERBOSE
     getargs $*    
     
     
-    media_device_checktarget $TARGET disk
+    media_device_checktarget $DISK disk
     if (( $? )); then exit 1; fi
     
-    if (( $(ui_yesno "UNMOUNT" "unmount all volumes on $TARGET" $YESNO) )); then
+    if (( $(ui_yesno "UNMOUNT" "unmount all volumes on $DISK" $YESNO) )); then
     
-    PARTITION_COUNT=$(media_disk_partcount $TARGET)
+        PARTITION_COUNT=$(media_disk_partcount $DISK)
     
         for ((PART=1 ; PART<=$PARTITION_COUNT; PART++)) ; do
-            if [ ! -z "$(df | grep ^$TARGET$PART)" ]; then
-                run_command "udisksctl unmount -b $TARGET$PART" $LINENO  2>/dev/null
+            if [ ! -z "$(df | grep ^$DISK$PART)" ]; then
+                #run_command "udisksctl unmount -b $TARGET$PART" $LINENO  2>/dev/null
+                media_volume_unmount $DISK$PART $YESNO $VERBOSE
             fi    
         done    
     
@@ -1853,20 +1865,18 @@ media_disk_eject(){
         exit
     fi      
         
-    DEVICE=$(media_device_fullname $1)
+    DISK=$(media_device_name $1)
       
     local YESNO
     local VERBOSE
     getargs $*      
         
-    media_device_checktarget $DEVICE disk
-    if (( $? )); then
-        exit 1
-    fi
+    media_device_checktarget $DISK disk
+    if (( $? )); then return 1; fi
     
-    if (( $(ui_yesno "EJECT" "Eject $DEVICE" $YESNO) )); then
-        media_disk_unmount $DEVICE -y
-        run_command "udisksctl power-off -b $DEVICE" $LINENO
+    if (( $(ui_yesno "EJECT" "Eject $DISK" $YESNO) )); then
+        media_disk_unmount $DISK -y
+        run_command "udisksctl power-off -b $DISK" $LINENO
     fi
 }
 
@@ -2074,49 +2084,30 @@ echo_debug $LINENO block count=$DEVICE_BLOCK_COUNT
 }
 
 
+media_partition_pt_type(){
+    # returns the partition table type
+    #local PARTITION=$(media_device_fullname $1)
+    local DISK=$(media_device_name $1)
+    
+    sudo parted -m $DISK print | grep $DISK | cut -d: -f6
+    
+    #lsblk $DISK -n -d -o PTTYPE
+}
+
+
 media_partition_fs_type(){
     local PARTITION=$(media_device_fullname $1)
-    local DEVICE=$(media_device_name $1)
+    local DISK=$(media_device_name $1)
     local PARTNUM=$(media_device_partnum $1)   
     local FS_TYPE
-   
 
     # get FS_TYPE from parted
-    FS_TYPE=$(sudo parted $DEVICE -m -s print | grep ^$PARTNUM: | cut -d: -f5 | tr -d ' ')
-#    echo_debug "$LINENO '$PARTITION' '$FS_TYPE' Using parted"
+    FS_TYPE=$(sudo parted $DISK -m -s print | grep ^$PARTNUM: | cut -d: -f5 | tr -d ' ')
     
     # if parted returned nothing... use lsblk
     if [[ -z $FS_TYPE ]]; then
-   #     echo_debug "$LINENO FS_TYPE not found via parted '$FS_TYPE'"
-   #     echo_debug "$LINENO $(sudo parted $DEVICE -m print | grep ^$PARTNUM:)"
-      #  sleep 1  # this pause seems to help reliability
         FS_TYPE=$(lsblk -n $PARTITION -o FSTYPE)
- #       echo_debug "$LINENO '$FS_TYPE' Using lsblk"
     fi
-    
-    echo $FS_TYPE
-    return
-    
-    
-  # second try by both methods...  
-
-    if [[ -z $FS_TYPE ]]; then
-        sleep 1  # this pause seems to help reliability
-        FS_TYPE=$(sudo parted $DEVICE -m print | grep ^$PARTNUM: | cut -d: -f5 | tr -d ' ')
- #       echo_debug "$LINENO '$FS_TYPE' Using lsblk"
-    fi
-    
-    # if parted returned nothing... use lsblk
-    if [[ -z $FS_TYPE ]]; then
-        sleep 1  # this pause seems to help reliability
-        FS_TYPE=$(lsblk -n $PARTITION -o FSTYPE)
- #       echo_debug "$LINENO '$FS_TYPE' Using lsblk"
-    fi
-   
-   if [[ -z $FS_TYPE ]]; then
-        echo_debug $LINENO error getting FS_TYPE for $PARTITION
-        echo_debug $LINENO $(sudo parted $DEVICE -m print | grep ^$PARTNUM:)
-   fi
    
     echo $FS_TYPE
 }
@@ -2414,7 +2405,7 @@ media_partition_check(){
     
     
   #  echo_white "Partition Table Type check ..."
-    local PART_TABLE=$(media_partition_table $DEVICE)
+    local PART_TABLE=$(media_partition_pt_type $DEVICE)
     case $PART_TABLE in
         msdos|gpt|dos)   
             echo -n .
@@ -2462,11 +2453,6 @@ media_partition_check(){
     fi
     
     
-    #print alignment
-    echo Alignment is $(media_partition_alignment $PARTITION)
-    
-    
-    
     # check against the other partitions
     if [[ $START -lt $(media_partition_end $PARTITION_PREV) ]]; then
         echo ERROR.  Partition start is too small.  line $LINENO
@@ -2499,6 +2485,9 @@ media_partition_check(){
       echo -n "$FS ..."
     fi
     
+    #print alignment
+    echo -n "Alignment=$(media_partition_alignment $PARTITION) .."
+    
     echo_green OK
 }
 
@@ -2527,12 +2516,12 @@ media_filesystem_check() {
 
 
     FS_TYPE=$(media_partition_fs_type $PARTITION)
-    echo_white "Verifying file system ($FS_TYPE)...   "  
+    echo_white "Verifying file system on '$PARTITION' ($FS_TYPE)...   "  
 
     # unmount
     if [[ $(media_filesystem_ismounted $PARTITION) ]] && (( $(ui_yesno "Unmount" "Unmount and remount $PARTITION" $YESNO) )); then
-        echo
-        echo "Unmounting $PARTITION ..."
+        #echo
+        #echo "Unmounting $PARTITION ..."
         WAS_MOUNTED=true
         #umount $PARTITION
         media_volume_unmount $PARTITION -y
@@ -2542,7 +2531,6 @@ media_filesystem_check() {
         echo Volume $PARTITION is mounted.  Cannot verify it.
         return 1
     fi
-    
 
     
     case $FS_TYPE in
@@ -2629,7 +2617,7 @@ media_filesystem_check() {
     local PART_SIZE=$(media_partition_size $PARTITION)
     
     if [ $WAS_MOUNTED ]; then
-        echo Remounting $PARTITION...
+        #echo Remounting $PARTITION...
         media_volume_mount $PARTITION -y
     fi
     
@@ -2655,7 +2643,7 @@ media_filesystem_check() {
     fi
     
     
-    ui_echo "~ filesystem_check OK" green
+    ui_echo "Finished file system verification on '$PARTITION'." green
 }
 
 
@@ -2955,7 +2943,8 @@ media_volume_mount(){
     
 
     if (( $(ui_yesno "MOUNT" "Mount $PARTITION" "$YESNO") )); then
-        run_command "udisksctl mount -b $PARTITION" $LINENO 2>/dev/null
+        #run_command "udisksctl mount -b $PARTITION" $LINENO 2>/dev/null
+        udisksctl mount -b $PARTITION
     fi
 }
         
@@ -2980,7 +2969,8 @@ media_volume_unmount(){
     if [ ! -z "$(df | grep ^$PARTITION)" ]; then
     
         if (( $(ui_yesno "UNMOUNT" "Unmount $PARTITION?" $YESNO) )); then
-            run_command "udisksctl unmount -b $PARTITION" $LINENO 2>/dev/null
+            # run_command "udisksctl unmount -b $PARTITION" $LINENO 2>/dev/null
+            udisksctl unmount -b $PARTITION
         fi
         
     fi
@@ -3029,7 +3019,7 @@ media_volume_info(){
         
         local DEVICE_NAME=$(media_device_name $PARTITION)
         local DEVICE_SIZE=$(media_device_size $PARTITION)
-        local PART_TABLE=$(media_device_partition_table $PARTITION)
+        local PART_TABLE=$(media_disk_pt_type $PARTITION)
         
         local PART_START=$(media_partition_start $PARTITION)
         local PART_END=$(media_partition_end $PARTITION)
@@ -3320,31 +3310,31 @@ media_volume_verify(){
     
     echo_white Verify volume $PARTITION 
  
-  #  media_device_checktarget $PARTITION part
-  #  if (( $? )); then return 1; fi
+    media_device_checktarget $PARTITION part
+    if (( $? )); then return 1; fi
  
  
     #  Verify Disk ..... 
     echo  
-    echo_white Verify step 1 
+    echo_white "Verify step 1 "
     media_disk_verify $DISK $YESNO $VERBOSE
     if (( $? )); then return 1 ; fi
     
     
-    # Verify Partitions ........
+    # Verify Partition table ........
     echo
-    echo_white "Verify step 2: \nVerify partition '$DISK' ..."
-    sleep 1
+    echo_white "Verify step 2: \nVerify partition '$PARTITION' ..."
+    sleep .5
     if [[ ! -e $PARTITION ]]; then
         echo_red "Partition '$PARTITION' does not exist."  Line $LINENO
         return 1
     fi   
     
     echo -n "Checking 'Partition Table Type'..."
-    local PART_TABLE=$(media_partition_table $DISK)
+    local PART_TABLE=$(media_partition_pt_type $DISK)
     case $PART_TABLE in
-        msdos|gpt|dos)   echo_green "$PART_TABLE OK"   ;;
-        *)           echo_red "Partition Table error... '$PART_TABLE'" line $LINENO ;;
+        msdos|gpt|dos)      echo_green "$PART_TABLE OK"   ;;
+        *)                  echo_red "Partition Table error... '$PART_TABLE'" line $LINENO ;;
     esac 
     
     echo -n "Looking for partitions..."
@@ -3364,19 +3354,19 @@ media_volume_verify(){
  #       fi    
  #   done
  
-    # check the partition
+    # check the partition ---------
     media_partition_check $PARTITION $YESNO $VERBOSE
     
     
-    # Verify Filesystem --------
-    sleep 2
+    # Verify the Filesystem --------
+    #sleep 1
     echo
     echo_white Verify step 3
     media_filesystem_check $PARTITION $YESNO $VERBOSE
     if (( $? )); then return 1; fi
     
-    echo
-    echo_green  Verify volume $PARTITION complete
+    #echo
+    echo_green  Finished Volume Verification on $PARTITION.
     
 }
 
@@ -3772,11 +3762,11 @@ case $CMD in
     
     listFilesystems)        echo "Supported file systems: $FILESYSTEMS "    ;;
 
-    umount|unmount)         media_volume_unmount $2 $3 ;;  
-    umountDisk|unmountDisk) media_disk_unmount $2 $3 ;;
-    eject)                  media_disk_eject $2 $3 ;;
-    mount)                  media_volume_mount $2 $3 ;;      
-    mountDisk)              media_disk_mount $2 $3 ;;
+    umount|unmount)         media_volume_unmount $2 $3 $4;;  
+    umountDisk|unmountDisk) media_disk_unmount $2 $3 $4;;
+    eject)                  media_disk_eject $2 $3 $4;;
+    mount)                  media_volume_mount $2 $3 $4;;      
+    mountDisk)              media_disk_mount $2 $3 $4;;
 
     rename|renameVolume)    media_filesystem_rename $2 $3 $4 ;;
     
