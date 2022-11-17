@@ -9,7 +9,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.16"  #2022-11-15
+VER="0.1.17"  #2022-11-15
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -2650,7 +2650,7 @@ media_filesystem_check() {
     fi
     
     
-    ui_echo "Finished file system verification on '$PARTITION'." green
+    ui_echo "Finished Filesystem verification on '$PARTITION'." green
 }
 
 
@@ -3373,7 +3373,7 @@ media_volume_verify(){
     if (( $? )); then return 1; fi
     
     #echo
-    echo_green  Finished Volume Verification on $PARTITION.
+    echo_green  Finished Volume verification on $PARTITION.
     
 }
 
