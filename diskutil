@@ -1398,8 +1398,12 @@ media_disk_info(){
         exit
     fi    
     
-    local DEVICE=$(media_device_fullname $1)
+    local YESNO
+    local VERBOSE
+    getargs $*
     
+    
+    local DEVICE=$(media_device_fullname $1)
 
     #echo DiskInfo:
     echo Device: $DEVICE
@@ -1412,6 +1416,11 @@ media_disk_info(){
     run_command "lsblk -f $DEVICE" $LINENO
     echo
     run_command "sudo parted $DEVICE print free" $LINENO
+    
+    if [[ $VERBOSE = -v ]]; then
+        echo
+        run_command "lsblk -t $DEVICE" $LINENO
+    fi
 }
 
 
@@ -2073,15 +2082,21 @@ media_partition_fs_type(){
    
 
     # get FS_TYPE from parted
-    FS_TYPE=$(sudo parted $DEVICE -m print | grep ^$PARTNUM: | cut -d: -f5 | tr -d ' ')
+    FS_TYPE=$(sudo parted $DEVICE -m -s print | grep ^$PARTNUM: | cut -d: -f5 | tr -d ' ')
 #    echo_debug "$LINENO '$PARTITION' '$FS_TYPE' Using parted"
     
     # if parted returned nothing... use lsblk
     if [[ -z $FS_TYPE ]]; then
+   #     echo_debug "$LINENO FS_TYPE not found via parted '$FS_TYPE'"
+   #     echo_debug "$LINENO $(sudo parted $DEVICE -m print | grep ^$PARTNUM:)"
       #  sleep 1  # this pause seems to help reliability
         FS_TYPE=$(lsblk -n $PARTITION -o FSTYPE)
  #       echo_debug "$LINENO '$FS_TYPE' Using lsblk"
     fi
+    
+    echo $FS_TYPE
+    return
+    
     
   # second try by both methods...  
 
@@ -2100,6 +2115,7 @@ media_partition_fs_type(){
    
    if [[ -z $FS_TYPE ]]; then
         echo_debug $LINENO error getting FS_TYPE for $PARTITION
+        echo_debug $LINENO $(sudo parted $DEVICE -m print | grep ^$PARTNUM:)
    fi
    
     echo $FS_TYPE
@@ -2353,6 +2369,30 @@ media_partition_resize(){
 }
 
 
+media_partition_alignment(){
+    # returns the alignment status of a partition
+    
+    local DISK=$(media_device_name $1)
+    local PARTNUM=$(media_device_partnum $1)
+    local ALIGN
+    
+    ALIGN=$(sudo parted $DISK align-check opt $PARTNUM | grep not )
+    if [[ -z $ALIGN ]]; then
+        echo optimal
+        return
+    fi    
+    
+    ALIGN=$(sudo parted $DISK align-check min $PARTNUM | grep not)
+    if [[ -z $ALIGN ]]; then
+        echo minimal
+        return
+    fi  
+    
+    echo none
+    
+}
+
+
 media_partition_check(){
     # checks the endpoints of a partition
     
@@ -2423,10 +2463,7 @@ media_partition_check(){
     
     
     #print alignment
-    echo -n "min alighnment is: "
-    run_command "sudo parted $DEVICE align-check min $PARTNUM" $LINENO
-    echo -n "opt alignment is: "
-    run_command "sudo parted $DEVICE align-check opt $PARTNUM" $LINENO
+    echo Alignment is $(media_partition_alignment $PARTITION)
     
     
     
@@ -2962,7 +2999,10 @@ media_volume_info(){
     local diff
     local WAS_MOUNTED=$(media_filesystem_ismounted $PARTITION)
     local BLOCK_SIZE=$(media_disk_blocksize $DEVICE)
-      
+
+    local YESNO
+    local VERBOSE
+    getargs $*        
 
     media_device_checktarget $PARTITION part
     if (( $? )); then return 1; fi
@@ -2972,103 +3012,105 @@ media_volume_info(){
     #media_volume_mount $TARGET   
 #udisksctl mount -b $PARTITION   2>/dev/null
     
-    echo_white Displaying disk and partition info...
-    run_command "lsblk -f $DEVICE" $LINENO
+    echo_white Filesystem info
+    run_command "lsblk -f $PARTITION" $LINENO
+    
     echo
+    echo_white Disk and Partition info
     run_command "sudo parted $DEVICE print free" $LINENO
 
     echo
     
 
+    if [[ $VERBOSE = -v ]]; then
+    
+        # gather partition info...
+        echo Gathering partition details...
+        
+        local DEVICE_NAME=$(media_device_name $PARTITION)
+        local DEVICE_SIZE=$(media_device_size $PARTITION)
+        local PART_TABLE=$(media_device_partition_table $PARTITION)
+        
+        local PART_START=$(media_partition_start $PARTITION)
+        local PART_END=$(media_partition_end $PARTITION)
+        local PART_SIZE=$(media_partition_size $PARTITION)
+        local PART_MAX_END=$(media_partition_max $PARTITION)
 
-    
-    # gather partition info...
-    echo Gathering partition info...
-    
-    local DEVICE_NAME=$(media_device_name $PARTITION)
-    local DEVICE_SIZE=$(media_device_size $PARTITION)
-    local PART_TABLE=$(media_device_partition_table $PARTITION)
-    
-  #  local PART_START=$(media_partition_start $PARTITION)
-  #  local PART_END=$(media_partition_end $PARTITION)
-  #  local PART_SIZE=$(media_partition_size $PARTITION)
-    local PART_MAX_END=$(media_partition_max $PARTITION)
+        local FS_TYPE=$(media_partition_fs_type $PARTITION)
+        local FS_NAME=$(media_filesystem_name $PARTITION)
+        local FS_SIZE=$(media_filesystem_size $PARTITION)
+        local FS_MIN=$(media_filesystem_min $PARTITION)
+       
+        # new idea ...
+      #  local PART_RECORD=$(media_partition_record $PARTITION)
+      #  local PART_START=$(echo $PART_RECORD | cut -d: -f 2)
+      #  local PART_END=$(echo $PART_RECORD | cut -d: -f 3)
+      #  local PART_SIZE=$(echo $PART_RECORD | cut -d: -f 4)
+        
+        if [[ $(( $PART_START % $BLOCK_SIZE )) -eq 0 ]]; then
+            local PART_START_ALIGNED=Aligned
+        else
+            local PART_START_ALIGNED="Not Aligned"
+        fi
 
-    
-    
-    local FS_TYPE=$(media_partition_fs_type $PARTITION)
-    local FS_NAME=$(media_filesystem_name $PARTITION)
-    local FS_SIZE=$(media_filesystem_size $PARTITION)
-    local FS_MIN=$(media_filesystem_min $PARTITION)
-   
-   
-    # new idea ...
-    local PART_RECORD=$(media_partition_record $PARTITION)
-    local PART_START=$(echo $PART_RECORD | cut -d: -f 2)
-    local PART_END=$(echo $PART_RECORD | cut -d: -f 3)
-    local PART_SIZE=$(echo $PART_RECORD | cut -d: -f 4)
-    
-    if [[ $(( $PART_START % $BLOCK_SIZE )) -eq 0 ]]; then
-        local PART_START_ALIGNED=Aligned
-    else
-        local PART_START_ALIGNED="Not Aligned"
+        if [[ $(( $(( $PART_END + 1 )) % $BLOCK_SIZE )) -eq 0 ]]; then
+            local PART_END_ALIGNED=Aligned
+        else
+            local PART_END_ALIGNED="Not Aligned"
+        fi
+
+
+        
+        if [[ $(is_number $PART_SIZE) = true ]] && [[ $(is_number $PART_END) = true ]] && [[ $(is_number $PART_START) = true ]]; then  
+            p_diff=$(( $PART_SIZE - $PART_END  + $PART_START ))   # (($PART_SIZE-$PART_END+$PART_START))
+        else
+            p_diff=unknown    
+        fi
+     
+     
+        # if [[ $(is_number $P_SIZE) ]] && [[ $(is_number $FS_SIZE) ]]; then  
+        if [[ $(is_number $PART_SIZE) = true ]] && [[ $(is_number $FS_SIZE) = true ]]; then  
+            fs_diff=$(($PART_SIZE - $FS_SIZE))
+        else
+            fs_diff=unknown
+        fi
+     
+        
+        echo
+        echo_blue "=======   PARTITION DETAILS   ============"
+        echo "DEVICE       = $DEVICE_NAME"
+        echo "DEVICE_SIZE  = $(bytes $DEVICE_SIZE -h)      '$DEVICE_SIZE' " 
+        echo "Partition tbl= $PART_TABLE"  
+        echo
+     #   echo "PARTITION    = '$(media_device_fullname $DEVICE)'" 
+        echo "PARTNUM      = '$(media_device_partnum $PARTITION)'"  
+        echo "PARTITION    = '$PARTITION'"  
+        
+        echo "Alignment    = $(media_partition_alignment $PARTITION)"
+        
+        echo "PART_START   = $(bytes $PART_START -h)      '$PART_START'  ($PART_START_ALIGNED) "   
+        echo "PART_END     = $(bytes $PART_END -h)      '$PART_END'  ($PART_END_ALIGNED) "          
+        echo_white "PART_SIZE    = $(bytes $PART_SIZE -h)      '$PART_SIZE'   ($p_diff b larger than calc)"
+        echo "PART_MAX_END = $(bytes $PART_MAX_END -h)      '$PART_MAX_END'  "
+
+        echo
+        echo "FS_TYPE      = $FS_TYPE"  
+        echo "FS NAME      = $FS_NAME"
+        echo_white "FS_SIZE      = $(bytes $FS_SIZE -h)      '$FS_SIZE'   ($fs_diff b smaller than partition)"   
+        echo "FS_MIN       = $(bytes $FS_MIN -h)      '$FS_MIN' " 
+        
+        if [[ $fs_diff -lt 0 ]]; then
+            new_end=$(( $PART_START + $FS_SIZE ))
+            echo "try sudo parted $DEVICE_NAME unit B resizepart $(media_device_partnum $PARTITION) $new_end "
+        fi
     fi
-
-    if [[ $(( $(( $PART_END + 1 )) % $BLOCK_SIZE )) -eq 0 ]]; then
-        local PART_END_ALIGNED=Aligned
-    else
-        local PART_END_ALIGNED="Not Aligned"
-    fi
-
-
     
-    if [[ $(is_number $PART_SIZE) = true ]] && [[ $(is_number $PART_END) = true ]] && [[ $(is_number $PART_START) = true ]]; then  
-        p_diff=$(( $PART_SIZE - $PART_END  + $PART_START ))   # (($PART_SIZE-$PART_END+$PART_START))
-    else
-        p_diff=unknown    
-    fi
- 
- 
-    # if [[ $(is_number $P_SIZE) ]] && [[ $(is_number $FS_SIZE) ]]; then  
-    if [[ $(is_number $PART_SIZE) = true ]] && [[ $(is_number $FS_SIZE) = true ]]; then  
-        fs_diff=$(($PART_SIZE - $FS_SIZE))
-    else
-        fs_diff=unknown
-    fi
- 
-    
-    echo
-    echo_blue "=======   PARTITION INFO   ============"
-    echo "DEVICE       = $DEVICE_NAME"
-    echo "DEVICE_SIZE  = $(bytes $DEVICE_SIZE -h)      '$DEVICE_SIZE' " 
-    echo "Partition tbl= $PART_TABLE"  
-    echo
- #   echo "PARTITION    = '$(media_device_fullname $DEVICE)'" 
-    echo "PARTNUM      = '$(media_device_partnum $PARTITION)'"  
-    echo "PARTITION    = '$PARTITION'"  
-    echo "PART_START   = $(bytes $PART_START -h)      '$PART_START'  ($PART_START_ALIGNED) "   
-    echo "PART_END     = $(bytes $PART_END -h)      '$PART_END'  ($PART_END_ALIGNED) "          
-    echo_white "PART_SIZE    = $(bytes $PART_SIZE -h)      '$PART_SIZE'   ($p_diff b larger than calc)"
-    echo "PART_MAX_END = $(bytes $PART_MAX_END -h)      '$PART_MAX_END'  "
-
-    echo
-    echo "FS_TYPE      = $FS_TYPE"  
-    echo "FS NAME      = $FS_NAME"
-    echo_white "FS_SIZE      = $(bytes $FS_SIZE -h)      '$FS_SIZE'   ($fs_diff b smaller than partition)"   
-    echo "FS_MIN       = $(bytes $FS_MIN -h)      '$FS_MIN' " 
-    
-    if [[ $fs_diff -lt 0 ]]; then
-        new_end=$(( $PART_START + $FS_SIZE ))
-        echo "try sudo parted $DEVICE_NAME unit B resizepart $(media_device_partnum $PARTITION) $new_end "
-    fi
-    
-    
-    # mount
-   # if [[ -z $(media_filesystem_ismounted $PARTITION) ]] && [[ ! -z  $WAS_MOUNTED ]] ; then
+    # remount ?
+    if [[ -z $(media_filesystem_ismounted $PARTITION) ]] && [[ ! -z  $WAS_MOUNTED ]] ; then
    #     echo
    #     echo "Mounting $PARTITION ..."
-   #     media_volume_mount $PARTITION
-   # fi
+        media_volume_mount $PARTITION -y
+    fi
     
 }
 
@@ -3721,11 +3763,9 @@ case $CMD in
         fi    
       
         if [[ $(media_device_type $2) = disk ]]; then
-            media_disk_info $TARGET
+            media_disk_info $2 $3 $4
         else
-          #  media_disk_info $TARGET
-          #  echo
-            media_volume_info $TARGET 
+            media_volume_info $2 $3 $4 
             echo
         fi
         ;;
