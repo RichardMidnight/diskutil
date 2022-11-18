@@ -9,7 +9,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.18"  #2022-11-15
+VER="0.1.19"  #2022-11-18
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -390,6 +390,7 @@ env_which () {
         sudo dnf install which -y
     fi
     
+    # note: this may need to be a "sudo echo..." to set the admin path
     # if /usr/sbin is not in path, add it
   #if [[ "$STR" == *"$SUB"* ]]; then
     if [[ "$PATH" != *"/usr/sbin"* ]]; then
@@ -2547,7 +2548,7 @@ media_filesystem_check() {
             RC=$?
             if (( $RC )); then
                 ui_msg_error $LINENO "fsck.fat failed with rc $RC"
-                if (( ! $(ui_yesno "VERIFY" "Errors found.  Try to fix" ) )); then
+                if (( ! $(ui_yesno "VERIFY" "Errors found.  Try to fix" $YESNO) )); then
                     echo
                     return 1
                 fi
@@ -2565,7 +2566,7 @@ media_filesystem_check() {
             rc=$?
             if (( $rc )); then
                 error $LINENO "fsck.exfat failed with rc $rc"
-                if (( ! $(ui_yesno "VERIFY" "Errors found.  Try to fix" ) )); then
+                if (( ! $(ui_yesno "VERIFY" "Errors found.  Try to fix" $YESNO) )); then
                     echo
                     return 1
                 fi
@@ -2583,7 +2584,7 @@ media_filesystem_check() {
             
             if (( $rc )); then
                 error $LINENO "ntfsfix failed with rc $rc"
-                if (( ! $(ui_yesno "VERIFY" "Errors found.  Try to fix" ) )); then
+                if (( ! $(ui_yesno "VERIFY" "Errors found.  Try to fix" $YESNO ) )); then
                     echo
                     return 1
                 fi
@@ -2601,7 +2602,7 @@ media_filesystem_check() {
             rc=$?
             if (( $rc )); then
                 error $LINENO "e2fsck failed with rc $rc"
-                if (( ! $(ui_yesno "VERIFY" "Errors found.  Try to fix" ) )); then
+                if (( ! $(ui_yesno "VERIFY" "Errors found.  Try to fix" $YESNO) )); then
                     echo
                     return 1
                 fi
@@ -2700,9 +2701,14 @@ media_filesystem_repair() {
             run_command "sudo fsck.fat -a -w $VERBOSE $PARTITION" $LINENO  # from gparted
             rc=$?
             if (( $rc )); then
-                error $LINENO "Failed with rc $rc"
-                echo "Recommend using Windows to run 'chkdsk /f'"
-                return 1 
+                error $LINENO "Failed with rc $rc.. may have fixed it.  Running again ..."
+                run_command "sudo fsck.fat -a -w $VERBOSE $PARTITION" $LINENO  # from gparted
+                rc2=$?
+                if (( $rc2 )); then
+                    error $LINENO "Failed with rc $rc2.. "
+                    echo "Recommend using Windows to run 'chkdsk /f'"
+                    return 1 
+                fi    
             fi
             ;;
             
