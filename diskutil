@@ -9,7 +9,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.20"  #2022-11-18
+VER="0.1.21"  #2022-11-18
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -1067,6 +1067,10 @@ media_filesystem_min(){
      
         fat16|fat32|vfat)
            FS_MIN=$(sudo fatresize -i "$PARTITION" | grep Min | cut -d : -f2 | sed 's/ //g')
+           if (( $? )); then 
+                echo_debug line $LINENO Error running fatresize.
+           fi
+           
             ;;
              
         exfat)
@@ -1827,7 +1831,7 @@ media_disk_mount(){
         for ((PART=1 ; PART<=$PARTITION_COUNT; PART++)) ; do
              if [ -z "$(df | grep ^$DISK$PART)" ]; then
                 #run_command "udisksctl mount -b $DISK$PART" $LINENO 2>/dev/null
-                media_volume_mount $DISK$PART $YESNO $VERBOSE
+                media_volume_mount $DISK$PART -y $VERBOSE
              fi   
         done
     
@@ -1859,7 +1863,7 @@ media_disk_unmount(){
         for ((PART=1 ; PART<=$PARTITION_COUNT; PART++)) ; do
             if [ ! -z "$(df | grep ^$DISK$PART)" ]; then
                 #run_command "udisksctl unmount -b $TARGET$PART" $LINENO  2>/dev/null
-                media_volume_unmount $DISK$PART $YESNO $VERBOSE
+                media_volume_unmount $DISK$PART -y $VERBOSE
             fi    
         done    
     
