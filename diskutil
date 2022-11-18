@@ -9,7 +9,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.19"  #2022-11-18
+VER="0.1.20"  #2022-11-18
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -1116,13 +1116,13 @@ media_filesystem_size(){
     # returns the size of a filesystem.
     
     local PARTITION=$(media_device_fullname $1)
-    local FS_TYPE=$(media_partition_fs_type $PARTITION)    
+    local FS_TYPE=$(media_partition_fs_type $1)    
     local FS_SIZE
      
      case $FS_TYPE in
         fat16|fat32|vfat)
             #FS_SIZE=$(sudo fatresize -i "$PARTITION" | grep "Cur size" | cut -d: -f2 | sed 's/ //g')
-            FS_SIZE=$(sudo fatresize -i "$PARTITION" | grep "Size:" | cut -d: -f2 | sed 's/ //g')
+          #  FS_SIZE=$(sudo fatresize -i "$PARTITION" | grep "Size:" | cut -d: -f2 | sed 's/ //g')
             #FS_SIZE=$(sudo fsck.fat -n -v $PARTITION | grep "data clusters" | cut -d\( -f2 | cut -d" " -f1)
             
       #      if [[ -z $FS_SIZE ]]; then
@@ -1130,7 +1130,7 @@ media_filesystem_size(){
       #      fi
                         
       #      if [[ -z $FS_SIZE ]]; then
-                FS_SIZE=$(sudo fsck.fat -n -v $PARTITION | grep "data clusters" | cut -d\( -f2 | cut -d" " -f1)
+            FS_SIZE=$(sudo fsck.fat -n -v $PARTITION | grep "data clusters" | cut -d\( -f2 | cut -d" " -f1)
       #      fi
             ;;
             
