@@ -9,7 +9,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.17"  #2022-11-15
+VER="0.1.16"  #2022-11-15
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -2523,7 +2523,7 @@ media_filesystem_check() {
 
 
     FS_TYPE=$(media_partition_fs_type $PARTITION)
-    echo_white "Verifying file system on '$PARTITION' ($FS_TYPE)...   "  
+    echo_white "Verifying FileSystem on '$PARTITION' ($FS_TYPE)...   "  
 
     # unmount
     if [[ $(media_filesystem_ismounted $PARTITION) ]] && (( $(ui_yesno "Unmount" "Unmount and remount $PARTITION" $YESNO) )); then
@@ -2650,7 +2650,7 @@ media_filesystem_check() {
     fi
     
     
-    ui_echo "Finished Filesystem verification on '$PARTITION'." green
+    ui_echo "Finished file system verification on '$PARTITION'." green
 }
 
 
@@ -2778,6 +2778,7 @@ media_filesystem_resize(){
     
     local PARTITION=$(media_device_fullname $1)
     local SIZE=${2:-max}  # min max bytes
+    local DISK=$(media_device_name $1)
     local NEW_SIZE
     local STARTING_SIZE=$(media_filesystem_size $PARTITION)
     
@@ -2805,10 +2806,16 @@ media_filesystem_resize(){
         fat16|fat32)        
             # You can't resize FAT32 partition lesser than 512Mb ??
              case $SIZE in
-                 min)    
-                    NEW_SIZE=$(sudo fatresize -i $PARTITION | grep Min | cut -d: -f2 | tr -d " ")
-                    if [[ $NEW_SIZE -lt $(bytes 512M -b) ]]; then
-                        NEW_SIZE=$(bytes 540M -b)
+                 min)  
+                echo_debug $LINENO setting to min                 
+                    #NEW_SIZE=$(sudo fatresize -i $PARTITION | grep Min | cut -d: -f2 | tr -d " ")
+                    NEW_SIZE=$(media_filesystem_min $PARTITION )
+                echo_debug $LINENO NEW_SIZE=$NEW_SIZE   
+                   # MIN_SIZE=$(( $(bytes 512M -b) + $(media_disk_blocksize $DISK) + 512 ))
+                    MIN_SIZE=$(bytes 528M -b)
+                    if [[ $NEW_SIZE -lt $MIN_SIZE ]] ; then
+                        NEW_SIZE=$MIN_SIZE
+                echo_debug $LINENO NEW_SIZE=$NEW_SIZE                       
                     fi 
                     NEW_SIZE=" -s $(( $NEW_SIZE / 1024 ))k"
                     ;;
@@ -3330,7 +3337,7 @@ media_volume_verify(){
     
     # Verify Partition table ........
     echo
-    echo_white "Verify step 2: \nVerify partition '$PARTITION' ..."
+    echo_white "Verify step 2: \nVerify Partition '$PARTITION' ..."
     sleep .5
     if [[ ! -e $PARTITION ]]; then
         echo_red "Partition '$PARTITION' does not exist."  Line $LINENO
@@ -3373,7 +3380,7 @@ media_volume_verify(){
     if (( $? )); then return 1; fi
     
     #echo
-    echo_green  Finished Volume verification on $PARTITION.
+    echo_green  Finished Volume Verification on $PARTITION.
     
 }
 
