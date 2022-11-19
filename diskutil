@@ -9,7 +9,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.21"  #2022-11-18
+VER="0.1.22"  #2022-11-18
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -1328,57 +1328,40 @@ media_partition_size(){
     fi    
     
     # using parted   
-   #local SIZE=$(sudo parted -ms $DEVICE unit B print |  grep ^$PARTNUM: | cut -d ':' -f 4 | tr -d 'B')
+   #local SIZE=$(sudo parted -ms $DEVICE unit B print |  grep ^$PARTNUM: | cut -d: -f4 | tr -d 'B')
     
 
     #using fdisk
-    local SIZE=$(sudo fdisk  $DEVICE -l --bytes  | sed 's/  */ /g' | grep $PARTITION | cut -d" " -f5)
+    # might be a poor way to get size due to unknown columns displaying in the fdisk command 
+    local SIZE=$(sudo fdisk  $DEVICE -l --bytes  | grep $PARTITION | tr -d "*" | sed 's/  */ /g' |  cut -d" " -f5)
    
     echo $SIZE
 }
 
 
 media_partition_max(){
-#echo_debug $LINENO starting media_partition_max
     # return the max end point of a partition
     local DEVICE=$(media_device_name $1)
     local PARTNUM=$(media_device_partnum $1) 
     local PARTITION=$(media_device_fullname $1)
-    #local UNITS=${2:-"-b"}
-  #  local MULTIPLIER=1
-
-   
-#echo_debug $LINENO starting media_partition_max  2
-  
-    # using fdisk
-    #local NEXT_PARTITION=$DEVICE$(( $PART_NUM + 1 ))
-    #local MAX=$(media_partition_start $NEXT_PARTITION)
-    #MAX=$(( $MAX + $MULTIPLIER ))
-    #return
     
-    
-    
-    
-#echo_debug $LINENO starting media_partition_max  3    
-    
-    #using parted
-
     local PART_START=$(media_partition_start $PARTITION) 
 #echo_debug $LINENO START=$PART_START    
     local PART_END=$(media_partition_end $PARTITION) 
 #echo_debug $LINENO end=$PART_END   
-    local PART_FREE_START=$(( $PART_END + 1 ))  
+    local PART_FREESPACE_START=$(( $PART_END + 1 ))  
+    local PART_FREESPACE_END
     local NEW_END
     
+    # return if partition does not exist
     if [[ -z $(sudo parted -ms $DEVICE unit B print free | grep ^$PARTNUM: ) ]]; then
-        # partition number does not exist.
         return
     fi
     
-    local PART_FREE_END=$(sudo parted -ms $DEVICE unit B print free | grep $PART_FREE_START | grep free | cut -d: -f3 | tr -d 'B')
+    PART_FREESPACE_END=$(sudo parted -ms $DEVICE unit B print free | grep $PART_FREESPACE_START | grep free | cut -d: -f3 | tr -d 'B')
     
-    if [[ ! -z $PART_FREE_END ]]; then
-        NEW_END=$PART_FREE_END
+    if [[ ! -z $PART_FREESPACE_END ]]; then
+        NEW_END=$PART_FREESPACE_END
     else
         NEW_END=$PART_END
     fi    
@@ -1386,7 +1369,6 @@ media_partition_max(){
 #echo_debug $LINENO $PARTITION $NEW_END
     
     echo $NEW_END
-    
 }
 
 
@@ -1418,23 +1400,26 @@ media_disk_info(){
     local VERBOSE
     getargs $*
     
-    
     local DEVICE=$(media_device_fullname $1)
 
-    #echo DiskInfo:
-    echo Device: $DEVICE
-    echo Partition table type: $(media_disk_pt_type $DEVICE)
-    echo
+   # echo_white Info: $DEVICE
+    #echo Device: $DEVICE
+   # echo Partition table type: $(media_disk_pt_type $DEVICE)
+   # echo
    
     #run_command "lsblk $TARGET -o name,path,mountpoint,fstype,pttype,ptuuid,partuuid,size,label,vendor,model" $LINENO
    # run_command "sudo parted $TARGET print free | grep -v Partition" $LINENO
-    echo_white Displaying disk and partition info...
-    run_command "lsblk -f $DEVICE" $LINENO
-    echo
+    
+    echo_white Disk and Partition info $DEVICE
     run_command "sudo parted $DEVICE print free" $LINENO
     
+    echo_white Filesystem info
+    run_command "lsblk -f $DEVICE" $LINENO
+    echo
+    
     if [[ $VERBOSE = -v ]]; then
-        echo
+        #echo
+        echo_white Disk topology
         run_command "lsblk -t $DEVICE" $LINENO
     fi
 }
@@ -1534,7 +1519,7 @@ media_disk_initialize(){
     if [[ $PART_TABLE = "msdos" ]] || [[ $PART_TABLE == "gpt" ]] ; then
         x=1
     else
-        echo unsupported partition table type: $PART_TABLE
+        echo "Unsupported partition table type '$PART_TABLE'.  [ gpt | msdos ] "
         return 2
     fi
          
@@ -2557,8 +2542,8 @@ media_filesystem_check() {
                     return 1
                 fi
               
-               media_filesystem_repair $PARTITION $YESNO $VERBOSE
-               if (( $? )) ; then return 1; fi
+                media_filesystem_repair $PARTITION $YESNO $VERBOSE
+                if (( $? )) ; then return 1; fi
 
             fi
             ;;
@@ -2624,36 +2609,30 @@ media_filesystem_check() {
             exit
             ;;
     esac
-    
-    local FS_SIZE=$(media_filesystem_size $PARTITION)
-    local PART_SIZE=$(media_partition_size $PARTITION)
+    echo
     
     if [ $WAS_MOUNTED ]; then
-        #echo Remounting $PARTITION...
         media_volume_mount $PARTITION -y
     fi
     
     
-    
     # now check filesystem endpoints vs partition
+    local FS_SIZE=$(media_filesystem_size $PARTITION)
+    local PART_SIZE=$(media_partition_size $PARTITION)
+    local SIZE_AVAIL=$(( $PART_SIZE - $FS_SIZE ))
     
-#echo_debug $LINENO PS $(media_partition_size $PARTITION)   
-#echo_debug $LINENO FS $(media_filesystem_size $PARTITION) 
-    
-    local SIZE_DIFF=$(( $PART_SIZE - $FS_SIZE  ))
-    echo Filesystem is $(bytes $SIZE_DIFF -h) smaller than the partition.
-    if [[ $SIZE_DIFF -lt o ]]; then
-        echo_red WARNING, filesystem is $SIZE_DIFF bytes larger than the partition!
-        echo_red you need to fix this.
-        local SIZE_AVAIL=$(( $(media_partition_max $PARTITION) - $(media_partition_min $PARTITION) - $SIZE ))
-        if [[ $SIZE_AVAIL -gt 0 ]]; then
-            echo "expandng partition  (untested...) ..."
-           # run_command "media_partition_resize $PARTITION max" $LINENO
-           echo "consider running 'diskutil resizePartition $PARTITION max '"
-        fi 
+    if [[ $SIZE_AVAIL -lt o ]]; then
+        echo_debug $LINENO FS_SIZE=$FS_SIZE  $(bytes $FS_SIZE -h)
+        echo_debug $LINENO PART_SIZE=$PART_SIZE  $(bytes $PART_SIZE -h)
+        echo_red "WARNING, filesystem is $(bytes $(( - $SIZE_AVAIL )) -h ) ($(( - $SIZE_AVAIL )) bytes) LARGER than the partition!"
+        echo_red You need to fix this.
+        echo "Consider running 'diskutil resizePart $PARTITION max -f'"
         return 1
+    elif [[ $SIZE_AVAIL -gt o ]]; then  
+        echo_debug $LINENO FS_SIZE=$FS_SIZE  $(bytes $FS_SIZE -h)
+        echo_debug $LINENO PART_SIZE=$PART_SIZE  $(bytes $PART_SIZE -h)
+        echo "Filesystem is '$(bytes $SIZE_AVAIL -h)' smaller than the partition."
     fi
-    
     
     ui_echo "Finished file system verification on '$PARTITION'." green
 }
@@ -3026,22 +3005,31 @@ media_volume_info(){
     #media_volume_mount $TARGET   
 #udisksctl mount -b $PARTITION   2>/dev/null
     
-    echo_white Filesystem info
-    run_command "lsblk -f $PARTITION" $LINENO
-    
-    echo
-    echo_white Disk and Partition info
+   # echo_white Info: $PARTITION
+   # echo
+
+    echo_white Disk and Partition info $DEVICE
     run_command "sudo parted $DEVICE print free" $LINENO
 
-    echo
+    #echo
+    echo_white Filesystem info $PARTITION
+    run_command "lsblk -f $PARTITION" $LINENO
+    
+
+
+    #echo
+    
     
 
     if [[ $VERBOSE = -v ]]; then
     
         # gather partition info...
+        echo
+        echo_white "PARTITION DETAILS   ============"
         echo Gathering partition details...
         
         local DEVICE_NAME=$(media_device_name $PARTITION)
+        local PARTNUM=$(media_device_partnum $PARTITION)
         local DEVICE_SIZE=$(media_device_size $PARTITION)
         local PART_TABLE=$(media_disk_pt_type $PARTITION)
         
@@ -3090,8 +3078,7 @@ media_volume_info(){
         fi
      
         
-        echo
-        echo_blue "=======   PARTITION DETAILS   ============"
+
         echo "DEVICE       = $DEVICE_NAME"
         echo "DEVICE_SIZE  = $(bytes $DEVICE_SIZE -h)      '$DEVICE_SIZE' " 
         echo "Partition tbl= $PART_TABLE"  
@@ -3115,7 +3102,11 @@ media_volume_info(){
         
         if [[ $fs_diff -lt 0 ]]; then
             new_end=$(( $PART_START + $FS_SIZE ))
-            echo "try sudo parted $DEVICE_NAME unit B resizepart $(media_device_partnum $PARTITION) $new_end "
+            echo
+            echo_red "Warning, filesystem is LARGER than the partition"
+            echo_red "You need to fix this."
+            echo "try sudo parted $DEVICE_NAME unit B resizePart $PARTNUM $new_end "
+            echo " or sudo parted $DEVICE_NAME resizePart $PARTNUM 100%"
         fi
     fi
     
@@ -3177,9 +3168,10 @@ media_volume_resize(){
 
     local YESNO
     local VERBOSE
+    local FORCE
     getargs $*
     
-    
+  #  echo_debug  $LINENO $FORCE
     echo_white Resize Volume $PARTITION ...
     
     media_device_checktarget $PARTITION part
@@ -3214,7 +3206,13 @@ media_volume_resize(){
     if (( $? )); then
         echo Errors on filesystem $PARTITION. Cannot resize.
         echo run 'disutil repairPartition $PARTITION', then retry this.
-        return 1
+        if [[ $FORCE = -f ]]; then
+            ui_countdown 10 
+        else
+            echo exiting
+            return 1
+        fi
+
     fi    
     
     sleep 1
@@ -3223,7 +3221,13 @@ media_volume_resize(){
     media_filesystem_repair $PARTITION $YESNO $VERBOSE
     if (( $? )); then
         echo Errors on filesystem $PARTITION. Cannot resize.
-        return 1
+        if [[ $FORCE = -f ]]; then
+            ui_countdown 10 
+        else
+            echo exiting
+            return 1
+        fi
+
     fi     
     
     echo
@@ -3291,7 +3295,7 @@ media_volume_resize(){
     echo_white Summary
     run_command "sudo parted $DEVICE print free" $LINENO
     
-    
+    sleep .5
     media_volume_mount $PARTITION 
 }
 
@@ -3306,11 +3310,11 @@ getargs(){
     for ARG in $ARGS; do
 #echo_debug "$LINENO testing arg '$ARG'"    
         case $ARG in
-            -y)     YESNO=-y    ;;
-            -v)     VERBOSE=-v  ;;
+            -y|-yes)            YESNO=-y    ;;
+            -v|-verbose)        VERBOSE=-v  ;;
             -q)     QUIET=-q    ;;
+            -f|force)           FORCE=-f    ;;
             
-        
         esac
     done
 } 
