@@ -9,7 +9,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.22"  #2022-11-18
+VER="0.1.23"  #2022-11-18
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -2571,7 +2571,10 @@ media_filesystem_check() {
             run_command "sudo ntfsfix -n $PARTITION" $LINENO      # fsck for ntfs.  limited.  -n no-op
             rc=$?
             
-            if (( $rc )); then
+            run_command "sudo ntfsresize -i -f -n $VERBOSE $PARTITION" $LINENO        -n no-op
+            rc2=$?           
+            
+            if (( $rc )) || (( $rc2 )); then
                 error $LINENO "ntfsfix failed with rc $rc"
                 if (( ! $(ui_yesno "VERIFY" "Errors found.  Try to fix" $YESNO ) )); then
                     echo
@@ -2611,15 +2614,17 @@ media_filesystem_check() {
     esac
     echo
     
-    if [ $WAS_MOUNTED ]; then
-        media_volume_mount $PARTITION -y
-    fi
-    
+
     
     # now check filesystem endpoints vs partition
     local FS_SIZE=$(media_filesystem_size $PARTITION)
     local PART_SIZE=$(media_partition_size $PARTITION)
     local SIZE_AVAIL=$(( $PART_SIZE - $FS_SIZE ))
+    
+    if [ $WAS_MOUNTED ]; then
+        media_volume_mount $PARTITION -y
+    fi   
+    
     
     if [[ $SIZE_AVAIL -lt o ]]; then
         echo_debug $LINENO FS_SIZE=$FS_SIZE  $(bytes $FS_SIZE -h)
