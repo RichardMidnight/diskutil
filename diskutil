@@ -12,7 +12,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.30"  #2022-11-18
+VER="0.1.31"  #2022-11-18
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -239,7 +239,7 @@ env_install_fs_support(){
             ;;
             
         hfs+)
-            if [[ -z $(env_which mkfs.hfsplus ) ]] ; then   #hformat
+            if [[ -z $(env_which mkfs.hfsplus ) ]] && [[ -z $(env_which hformat ) ]]; then 
                 echo Installing hfs+ support...
                 sudo $INSTALL hfsplus 
                 sudo $INSTALL hfsutils    
@@ -1077,6 +1077,11 @@ media_filesystem_min(){
     
 media_filesystem_size(){  
     # returns the size of a filesystem in bytes.
+    
+    # FS_TYPE=$(lsblk $PARTITION -n -b -o FSTYPE)
+    # FS_TYPE=$(lsblk $PARTITION -n -b -o FSVER)
+    # FS_SIZE=$(lsblk $PARTITION -n -b -o FSSIZE)
+    # FS_USED=$(lsblk $PARTITION -n -b -o FSUSED)
     
     local PARTITION=$(media_device_fullname $1)
     local FS_TYPE=$(media_partition_fs_type $1)    
