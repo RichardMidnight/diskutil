@@ -5,15 +5,13 @@ Simplifies disk management in linux.  It is modeled off apple's diskutil.
 
 NOTE, THIS IS IN DEVELOPMENT.  USE AT YOUR OWN RISK!!
 
-Simplifies the installation of filesystem support for fat16, fat32, exfat, ntfs, hfs.
+Simplifies the installation of filesystem support for fat16, fat32, exfat, ntfs, hfs+.
 
 Simplifies managing volumes with popular filesystem.  
 
-Simplifies mounting, unmounting, verifying, repairing, renaming, erasing, and resizing volumes
+Simplifies mounting, unmounting, verifying, repairing, renaming, resizing, erasing, adding, and deleting volumes.
 
-Simpifies partition functions: initDisk, addVolume, delVolume
-
-Supported filesystems:  fat16, fat32, exfat, ntfs, hfs, ext2, ext3, ext4
+Supported filesystems:  ext2, ext3, ext4, fat16, fat32, exfat, ntfs, hfs+
 
 
 # Install
