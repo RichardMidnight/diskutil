@@ -12,7 +12,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.31"  #2022-11-18
+VER="0.1.32"  #2022-11-18
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -2120,9 +2120,18 @@ media_partition_format(){
             
         hfs+)
             # hformat -l 'HFSX' '/dev/sda3' 
-            run_command "sudo mkfs.hfsplus -v $FS_NAME $PARTITION" $LINENO $VERBOSE  # -v=volumename
+            #run_command "sudo mkfs.hfsplus -v $FS_NAME $PARTITION" $LINENO $VERBOSE  # -v=volumename
             #run_command "sudo hformat -l $FS_NAME $PARTITION" $LINENO $VERBOSE
-            ES=$?
+           # [[ -z $(env_which mkfs.hfsplus ) ]] && [[ -z $(env_which hformat ) ]]
+           
+            # two tools, don't know which you will have
+            if [[ ! -z $(env_which mkfs.hfsplus ) ]]; then
+                run_command "sudo mkfs.hfsplus -v $FS_NAME $PARTITION" $LINENO $VERBOSE  # -v=volumename
+                ES=$?
+            elif [[ ! -z $(env_which hformat ) ]]; then
+                run_command "sudo hformat -l $FS_NAME $PARTITION" $LINENO $VERBOSE
+                ES=$?
+            fi
             ;;
             
         unformatted)  ES=
