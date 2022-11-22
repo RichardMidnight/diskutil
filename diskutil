@@ -12,7 +12,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.28"  #2022-11-18
+VER="0.1.29"  #2022-11-18
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -22,7 +22,7 @@ SETTINGS="/home/$USER/.config/$SCRIPTNAME/$SCRIPTNAME.conf"
 LOG_FILE="/home/$USER/.config/$SCRIPTNAME/$SCRIPTNAME.log"
 LOG=on
 
-FILESYSTEMS="fat16 fat32 exfat ntfs ext2 ext3 ext4 linux-swap freespace hfsplus"
+FILESYSTEMS="fat16 fat32 exfat ntfs ext2 ext3 ext4 linux-swap freespace hfs+"
 
 WHITE='\033[1;37m'
 RED='\033[1;31m'
@@ -238,9 +238,9 @@ env_install_fs_support(){
         linux-swap|freespace)
             ;;
             
-        hfsplus)
+        hfs+)
             if [[ -z $(env_which hformat) ]] ; then
-                echo Installing hfsplus support...
+                echo Installing hfs+ support...
                 sudo $INSTALL hfsplus 
                 sudo $INSTALL hfsutils    
                 #    Or install hfsprogs and hfsutils from the AUR and run
@@ -1051,6 +1051,11 @@ media_filesystem_min(){
             fi
             ;;
 
+        hfs+)
+            
+            ;;
+
+
         *)
             ui_msg_error $LINENO "Filesystem '$FS_TYPE' unknown"
             ;;
@@ -1110,6 +1115,12 @@ media_filesystem_size(){
             
         linux-swap*)
             FS_SIZE=1024
+            ;;
+            
+        hfs+)
+            local BLOCKSIZE=$(sudo mkfs.hfs -N $PARTITION | grep block-size | cut -d: -f2 | tr -d " ")
+            local BLOCKS=$(sudo mkfs.hfs -N $PARTITION | grep "total blocks" | cut -d: -f2 | tr -d " ")
+            FS_SIZE=$(( $BLOCKS * $BLOCKSIZE ))
             ;;
             
         *)
@@ -1582,7 +1593,7 @@ media_disk_addpartition(){
     fi
 
     
-    if (( ! $(ui_yesno "ADD PARTITION" "Add a partition to '$DEVICE' " "$YESNO") )); then
+    if (( ! $(ui_yesno "ADD PARTITION" "Add a '$SIZE' '$FORMAT' partition to '$DEVICE' " "$YESNO") )); then
         ui_msg "ADD PARTITION" "~ Partition not added to $DEVICE. " "" "" log
         return 1
     fi
@@ -2102,10 +2113,10 @@ media_partition_format(){
             ES=$?
             ;;
             
-        hfs)
+        hfs+)
             # hformat -l 'HFSX' '/dev/sda3' 
-            #run_command "sudo mkfs.hfs $VERBOSE $FS_NAME $PARTITION" $LINENO $VERBOSE
-            run_command "sudo hformat -l $FS_NAME $PARTITION" $LINENO $VERBOSE
+            run_command "sudo mkfs.hfs -v $FS_NAME $PARTITION" $LINENO $VERBOSE  # -v=volumename
+            #run_command "sudo hformat -l $FS_NAME $PARTITION" $LINENO $VERBOSE
             ES=$?
             ;;
             
@@ -2513,6 +2524,10 @@ media_filesystem_check() {
             fi
             ;;
         
+        hfs+)
+            run_command "sudo fsck.hfsplus -f -n $PARTITION"  $LINENO  $VERBOSE
+            ;;
+        
         
         *)
             ui_msg_error $LINENO "Filesystem '$FILESYSTEM' not supported"
@@ -2654,6 +2669,12 @@ media_filesystem_repair() {
                # (( $? < 4 )) && return
             fi
             ;;
+            
+                
+        hfs+)
+            run_command "sudo fsck.hfsplus -f -y $PARTITION"  $LINENO  $VERBOSE
+            ;;    
+            
             
         *)
             ui_msg_error $LINENO "Unsupported file system '$FS_TYPE'"
@@ -2855,6 +2876,11 @@ media_filesystem_resize(){
             sleep 2
             ;;       
             
+            
+        hfs+)
+            echo "Can not resize hfs+ file systems. Recomend using Apple."
+            return
+            ;;    
             
        *)
             ui_msg_error $LINENO "Unknown filesystem type '$FS_TYPE'"
@@ -3216,6 +3242,11 @@ media_volume_resize(){
     
     if [[ $(media_partition_fs_type $PARTITION) = exfat ]]; then
         echo Cannot resize exfat filesystems.  Use Windows.
+        return 1
+    fi
+    
+    if [[ $(media_partition_fs_type $PARTITION) = hfs+ ]]; then
+        echo Cannot resize hfs+ filesystems.  Use Apple.
         return 1
     fi
     
