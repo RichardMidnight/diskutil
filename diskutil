@@ -12,7 +12,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.26"  #2022-11-18
+VER="0.1.27"  #2022-11-18
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -58,10 +58,10 @@ run_command(){
     getargs $*
     
     if [[ $VERBOSE = -v ]]; then
-        echo -n "- Running: "
+        echo -n "$PRODUCTNAME: running: "
         ui_echo "$CMD" blue       
     else
-        echo -n "- Running: "
+        echo -n "$PRODUCTNAME: running: "
         ui_echo "$CMD" blue     
         DUMP=" 1> /dev/null"
     fi    
@@ -1311,13 +1311,14 @@ media_disk_verify() {
     # checking that $DISK exists
     media_device_checktarget $DISK disk 
     if (( $? )); then return 1; fi
+    echo Disk $DISK found.
     
     
-    echo -n "Checking Partition Table Type ..."
+    #echo -n "Checking Partition Table Type ..."
     local PT_TYPE=$(media_disk_pt_type $DISK)  # this is running lsblk
-    if (( $? )); then return 1; fi
     case $PT_TYPE in
-        dos|msdos|gpt)  echo_green "$PT_TYPE OK"  ;;
+        dos|msdos|gpt)  echo "Disk initialized with '$PT_TYPE' partition table"  ;;
+        "")             ui_msg_error $LINENO "Disk not initialied... (no disk label found)" ;;
         *)              ui_msg_error $LINENO "Unknown Partition Table Type... '$PT_TYPE'" ;;
     esac 
     
@@ -1416,9 +1417,9 @@ media_disk_initialize(){
         return 1
     fi
 
+  #  ui_countdown 10 "ERASE MEDIA"  # "Erasing Media '$(media_name $DISK)' in 10 seconds...\n\n"
+  #  if (( $? )); then return 1; fi
 
-    ui_countdown 10 "ERASE MEDIA"  # "Erasing Media '$(media_name $DISK)' in 10 seconds...\n\n"
-    if (( $? )); then return 1; fi
        
     echo "Zero the first 5K of '$DISK'..."
     run_command "sudo dd if=/dev/zero of=$DISK bs=512 count=10K" $LINENO $VERBOSE
@@ -1470,9 +1471,9 @@ media_disk_addpartition(){
     fi
     
     # this needs work...
-    if [[ $(is_number $(bytes $SIZE -b)) != true ]]; then
+    if [[ $(is_number $(bytes $SIZE -b)) != true ]] && [[ $SIZE != min ]] && [[ $SIZE != max ]]; then
         ui_msg_error $LINENO "Invalid size '$SIZE'"
-        # return 1
+        return 1
     fi 
     
     
@@ -1625,8 +1626,8 @@ media_disk_delpartition(){
         return 1
     fi
 
-    ui_countdown 10 "ERASE MEDIA"  # "Erasing Media '$(media_name $DEVICE)' in 10 seconds...\n\n"
-    if (( $? )); then return 1; fi
+  #  ui_countdown 10 "ERASE MEDIA"  # "Erasing Media '$(media_name $DEVICE)' in 10 seconds...\n\n"
+  #  if (( $? )); then return 1; fi
 
     
     #echo Unmounting $PARTITION
@@ -1685,7 +1686,7 @@ media_disk_unmount(){
         return
     fi
     
-    DISK=$(media_device_name $1)
+    DISK=$(media_device_fullname $1)
  
     local YESNO
     local VERBOSE
@@ -1716,7 +1717,7 @@ media_disk_eject(){
         exit
     fi      
         
-    DISK=$(media_device_name $1)
+    DISK=$(media_device_fullname $1)
       
     local YESNO
     local VERBOSE
@@ -1725,7 +1726,8 @@ media_disk_eject(){
     media_device_checktarget $DISK disk
     if (( $? )); then return 1; fi
     
-    if (( $(ui_yesno "EJECT" "Eject $DISK" $YESNO) )); then
+    if (( $(ui_yesno "EJECT" "Unmount all volumes on '$DISK' and eject it" $YESNO) )); then
+        echo "Unmounting and ejecting '$DISK'..."
         media_disk_unmount $DISK -y $VERBOSE
         run_command "udisksctl power-off -b $DISK" $LINENO $VERBOSE
     fi
@@ -1789,8 +1791,8 @@ media_disk_format(){
         return
     fi
 
-    ui_countdown 10 "ERASE MEDIA"  # "Erasing Media '$(media_name $DEVICE)' in 10 seconds...\n\n"
-    if (( $? )); then return 1; fi
+ #   ui_countdown 10 "ERASE MEDIA"  # "Erasing Media '$(media_name $DEVICE)' in 10 seconds...\n\n"
+ #   if (( $? )); then return 1; fi
 
 
     #echo "Unmounting '$DEVICE'..."
@@ -1832,7 +1834,7 @@ media_disk_format(){
 media_device_wipe(){
     # wipes out all data on a drive or partition, overwriting it the pattern specified
     
-echo_debug $LINENO $1    
+#echo_debug $LINENO $1    
     if [[ -z $1 ]]; then
         echo "Usage: diskutil wipe device [disk|partition] [zero|random|shred] [size|max] [-y]"
         return
@@ -1854,7 +1856,7 @@ echo_debug $LINENO $1
         return 1
     fi    
     
-    local ROOT="/dev/$(env_root_device)"
+    local ROOT=$(media_device_fullname $(env_root_device))
     local TYPE=$(lsblk $PARTITION -dnpo TYPE)
     local NAME=$(lsblk $DISK -dnpo VENDOR,MODEL,SIZE)
   #  local PART1=$DEVICE\1    
@@ -1880,15 +1882,21 @@ echo_debug $LINENO $1
         SIZE=$(bytes $SIZE -b)
     fi
     
-    BLOCK_SIZE_BYTES=$((1024*1024*4))
+    BLOCK_SIZE_BYTES=$(media_disk_blocksize $DISK)
     BLOCK_SIZE=$(( $BLOCK_SIZE_BYTES / 1024 / 1024 ))MB
-    #DEVICE_BLOCK_COUNT=$(( $DEVICE_SIZE_BYTES / $BLOCK_SIZE_BYTES ))
     DEVICE_BLOCK_COUNT=$(( $SIZE / $BLOCK_SIZE_BYTES ))
 
-    if [ $1 = $ROOT ] ; then
-        ui_msg_error $LINENO "Can not wipe root device"
+
+    if [[ $PARTITION = $ROOT ]] ; then
+        ui_msg_error $LINENO "Can not wipe root Volume"
         return 3
     fi
+
+    if [[ $TYPE = disk ]] && [[ $DISK = $(media_device_name $PARTITION) ]]; then
+        ui_msg_error $LINENO "Can not wipe root Disk"
+        return 3
+    fi
+    
  
     
     if (( ! $(ui_yesno "WIPE" "Wipe $PARTITION with $PATTERN" $YESNO) )); then
@@ -1936,7 +1944,7 @@ echo_debug $LINENO $1
     echo
     ui_msg "WIPE MEDIA" "'$PARTITION' has been wiped with $PATTERN."   
     
-    pisafe_write_log "WIPE MEDIA '$NAME' on $PARTITION...  $TEST_RESULTS"   
+#    pisafe_write_log "WIPE MEDIA '$NAME' on $PARTITION...  $TEST_RESULTS"   
 }
 
 
@@ -2021,8 +2029,8 @@ media_partition_format(){
         return
     fi
 
-    ui_countdown 10 "ERASE MEDIA"  # "Erasing Media '$(media_name $DEVICE)' in 10 seconds...\n\n"
-    if (( $? )); then return 1; fi
+   # ui_countdown 10 "ERASE MEDIA"  # "Erasing Media '$(media_name $DEVICE)' in 10 seconds...\n\n"
+   # if (( $? )); then return 1; fi
 
     
     #echo "Unmounting 'PARTITION'..."
@@ -2082,7 +2090,10 @@ media_partition_format(){
         return 1
    # else
    #     ui_msg "ERASE MEDIA" "~ Format complete. '$PARTITION' has been erased." white "" log
+  
     fi
+    
+     echo "Volume '$PARTITION' erased.  Formatted as '$FORMAT'"
 }
 
 
@@ -2201,7 +2212,7 @@ media_partition_resize(){
 
 
         echo_white "Resizing $PARTITION to $SIZE endpoint='$END' "
-        run_command "sudo parted $DEVICE unit B resizepart $PART_NUM $END" $LINENO
+        run_command "sudo parted $DEVICE unit B resizepart $PART_NUM $END" $LINENO -v   # -v verbose lets it ask y/n to continue
         if (( $? )); then return 1; fi
         
         
@@ -2255,7 +2266,7 @@ media_partition_check(){
     #    return 1
     #fi
     
-    media_device_checktarget $DEVICE part
+    media_device_checktarget $PARTITION part
     if (( $? )); then return 1; fi   
     
     echo -n "Verifying '$PARTITION'"
@@ -2458,20 +2469,19 @@ media_filesystem_check() {
             
  
         "") #error $LINENO "No filesystem found.. continuing."
-            if  (( $(ui_yesno "CHECK FILESYSTEM" "No filesystem found.  Continue?" ) )); then
+            if  (( $(ui_yesno "CHECK FILESYSTEM" "No filesystem found. Continue?" ) )); then
                 return
             else
-                echo_red quiting
+                #echo_red quiting
                 return 1
             fi
             ;;
         
         
-        
         *)
             ui_msg_error $LINENO "Filesystem '$FILESYSTEM' not supported"
             #return 5
-            exit
+            return 1
             ;;
     esac
     echo
@@ -2523,6 +2533,11 @@ media_filesystem_repair() {
      
     media_device_checktarget $PARTITION part 
     if (( $? )); then return 1; fi 
+    
+    
+    if ! (( $(ui_yesno "REPAIR" "Repair Volume '$PARTITION'" $YESNO) )); then
+        return 1
+    fi
     
     
     # unmount
@@ -2616,6 +2631,8 @@ media_filesystem_repair() {
     fi
     
      ui_echo "~ filesystem_repair OK" green
+     
+     
 }
 
 
@@ -2659,6 +2676,9 @@ media_filesystem_rename() {
     if [[ $WAS_MOUNTED = true ]]; then
         media_volume_mount $PARTITION $YESNO $VERBOSE
     fi
+    
+    sleep .5
+    echo "'$PARTITION' is named '$(media_filesystem_name $PARTITION)'"
 }
 
 
@@ -2967,7 +2987,8 @@ media_volume_info(){
 
         
         if [[ $(is_number $PART_SIZE) = true ]] && [[ $(is_number $PART_END) = true ]] && [[ $(is_number $PART_START) = true ]]; then  
-            p_diff=$(( $PART_SIZE - $PART_END  + $PART_START ))   # (($PART_SIZE-$PART_END+$PART_START))
+            #p_diff=$(( $PART_SIZE - $PART_END  + $PART_START ))   # (($PART_SIZE-$PART_END+$PART_START))
+            p_diff=$(( $PART_END + 1 - $PART_START - $PART_SIZE  ))   # (($PART_SIZE-$PART_END+$PART_START))
         else
             p_diff=unknown    
         fi
@@ -3025,6 +3046,15 @@ media_volume_info(){
 
 media_volume_badblocks(){
     
+    if [[ -z $1 ]]; then
+        echo "Usage: diskutil badBlocks device  [-y] [-v]"
+        echo
+        echo Example: diskutil badBlocks disk3  
+        echo Example: diskutil badBlocks sda1 -y -v
+        return
+    fi
+    
+    
     local PARTITION=$(media_device_fullname $1)
     
     local YESNO
@@ -3037,7 +3067,7 @@ media_volume_badblocks(){
     
     if (( $(ui_yesno "BAD BLOCKS" "Check $PARTITION for bad blocks " $YESNO ) )); then
     
-        run_command "sudo badblocks -s $VERBOSE $PARTITION" $LINENO
+        run_command "sudo badblocks -s $VERBOSE $PARTITION" $LINENO $VERBOSE
     
     fi
 }
@@ -3086,7 +3116,7 @@ media_volume_add(){
     
     
     # format the new partition
-    media_partition_format $PARTITION $FORMAT $NAME $YESNO $VERBOSE
+    media_partition_format $PARTITION $FORMAT $NAME -y $VERBOSE
     if (( $? )); then
         return 1
     else
@@ -3193,8 +3223,8 @@ media_volume_resize(){
     fi
 
 
-    ui_countdown 10 "RESIZE PARTITION"  # "Resizing Partition '$(media_name $DEVICE)' in 10 seconds...\n\n"
-    if (( $? )); then return 1; fi
+   # ui_countdown 10 "RESIZE PARTITION"  # "Resizing Partition '$(media_name $DEVICE)' in 10 seconds...\n\n"
+   # if (( $? )); then return 1; fi
 
     
     
@@ -3227,7 +3257,11 @@ media_volume_resize(){
         echo
         echo_white " - Resize step 2: Grow FILESYSTEM to fit PARTITION..."
         #media_filesystem_resize_topart $PARTITION
-        media_filesystem_resize $PARTITION max $YESNO $VERBOSE
+        case $(media_partition_fs_type $PARTITION) in
+            vfat|fat16|fat32)               ;; 
+            *)                  NEW_SIZE=max;;
+        esac
+        media_filesystem_resize $PARTITION $NEW_SIZE $YESNO $VERBOSE
         if (( $? )); then return 1; fi
     fi  
       
@@ -3242,9 +3276,12 @@ media_volume_resize(){
         return 1
     fi      
     
+    #echo
+    #echo_white Summary
+    #run_command "sudo parted $DEVICE print free" $LINENO -v
+    
     echo
-    echo_white Summary
-    run_command "sudo parted $DEVICE print free" $LINENO
+    echo "Volume '$PARTITION' is now size '$(bytes $(media_partition_size $PARTITION) -h )'"
     
     sleep .5
     media_volume_mount $PARTITION 
@@ -3288,7 +3325,7 @@ media_volume_verify(){
     getargs $*
 
     
-    echo_white Verify volume $PARTITION 
+    echo_white "Verify volume '$PARTITION' "
  
     media_device_checktarget $PARTITION part
     if (( $? )); then return 1; fi
@@ -3306,33 +3343,27 @@ media_volume_verify(){
     echo_white "Verify step 2: \nVerify Partition '$PARTITION' ..."
     sleep .5
     if [[ ! -e $PARTITION ]]; then
-        echo_red "Partition '$PARTITION' does not exist."  Line $LINENO $VERBOSE
+        ui_msg_error $LINENO "Partition '$PARTITION' not found."  
         return 1
+    else
+        echo "Partition '$PARTITION' found."
     fi   
     
     echo -n "Checking 'Partition Table Type'..."
     local PT_TYPE=$(media_partition_pt_type $DISK)
     case $PT_TYPE in
-        msdos|gpt|dos)      echo_green "$PT_TYPE OK"   ;;
+        msdos|gpt|dos)      echo "Partition table $PT_TYPE found"   ;;
         *)                  ui_msg_error $LINENO "Unknown Partition-Table Type'$PT_TYPE'" ;;
     esac 
     
     echo -n "Looking for partitions..."
     local PARTITION_COUNT=$(media_disk_partcount $DISK)
-    echo_green "'$PARTITION_COUNT' found OK"
     if [[ $PARTITION_COUNT -eq 0 ]]; then
-        echo_red WARNING... no partitions found.
+        ui_msg_warning $LINENO "No partitions found."
+    else
+        echo "'$PARTITION_COUNT' partitions found."
     fi
-    
-    # check each partition
-    # for number in $(seq 1 $MAX) ; do
- #   local PARTITION_NUM
- #   for PARTITION_NUM in $(seq 1 $PARTITION_COUNT); do
- #       media_partition_check $DISK$PARTITION_NUM $YESNO $VERBOSE
- #       if (( $? )); then
- #           echo_red ERROR checking partition
- #       fi    
- #   done
+
  
     # check the partition ---------
     media_partition_check $PARTITION $YESNO $VERBOSE
@@ -3346,7 +3377,7 @@ media_volume_verify(){
     if (( $? )); then return 1; fi
     
     #echo
-    echo_green  Finished Volume Verification on $PARTITION.
+    echo_green Finished Volume Verification on $PARTITION.
     
 }
 
@@ -3691,6 +3722,20 @@ menu() {
 }
 
 
+disk_util_terminology(){
+echo "diskutil terminology:
+
+Device
+Disk
+Partition
+Volume      A formatted partition
+
+filesystem
+format
+"
+    
+}
+
 
 
 
@@ -3705,6 +3750,7 @@ This simplifies the use of: parted, lsblk, udisksctl mount, udisksctl unmount, u
 
 Usage:  diskutil [quiet] <verb> <options> [-y] [-v], where <verb> is as follows:
 
+     terminology        ( )
      list               (List available disks and partitions)
      info[rmation]      (Get information on a specific disk or volume)
      listFilesystems    (List supported file systems)
@@ -3745,7 +3791,7 @@ Usage:  diskutil [quiet] <verb> <options> [-y] [-v], where <verb> is as follows:
      
      wipe                 (wipe entire partition with zero|random|shred)
 
-     badblocks            (check Volume for bad blocks)
+     badBlocks            (check Volume for bad blocks)
      hexedit              (edit disk or partition)
 
 diskutil <verb> with no options will provide help on that verb
@@ -3791,6 +3837,8 @@ case $CMD in
         disk_utility_help
         exit
         ;;
+        
+    terminology)    disk_util_terminology ;;    
         
     list)
         run_command "lsblk $(media_device_name $2) -o name,type,size,pttype,fstype,label,fsuse%,mountpoint" $LINENO -v
@@ -3857,10 +3905,10 @@ case $CMD in
    # zeroDisk)               media_disk_wipe "$2" zero $3 $4;;    #shred or dd or 
    # randomDisk)             media_disk_wipe "$2" random $3 $4 ;;
    # secureErase)            media_disk_wipe "$2" shred $3 $4;;
-    wipePartition)          media_device_wipe $2 part $3 $4 $5 $6;;
-    wipeDisk)               media_device_wipe $2 disk $3 $4 $5 $6;;     
+    wipePartition)          media_device_wipe "$2" part $3 $4 $5 $6;;
+    wipeDisk)               media_device_wipe "$2" disk $3 $4 $5 $6;;     
     
-    badblocks)              media_volume_badblocks $2 $3 $4;;
+    badBlocks)              media_volume_badblocks $2 $3 $4;;
     hexedit)                sudo hexedit $(media_device_fullname $2);;
             
     clone)
