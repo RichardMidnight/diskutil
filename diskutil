@@ -12,7 +12,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.27"  #2022-11-18
+VER="0.1.28"  #2022-11-18
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -22,7 +22,7 @@ SETTINGS="/home/$USER/.config/$SCRIPTNAME/$SCRIPTNAME.conf"
 LOG_FILE="/home/$USER/.config/$SCRIPTNAME/$SCRIPTNAME.log"
 LOG=on
 
-FILESYSTEMS="fat16 fat32 exfat ntfs ext2 ext3 ext4 linux-swap freespace"
+FILESYSTEMS="fat16 fat32 exfat ntfs ext2 ext3 ext4 linux-swap freespace hfsplus"
 
 WHITE='\033[1;37m'
 RED='\033[1;31m'
@@ -237,6 +237,20 @@ env_install_fs_support(){
             
         linux-swap|freespace)
             ;;
+            
+        hfsplus)
+            if [[ -z $(env_which hformat) ]] ; then
+                echo Installing hfsplus support...
+                sudo $INSTALL hfsplus 
+                sudo $INSTALL hfsutils    
+                #    Or install hfsprogs and hfsutils from the AUR and run
+                #   fsck.hfsplus /dev/sda1 //replace sda1 as appropriate
+                # https://www.kernel.org/doc/html/latest/filesystems/hfsplus.html
+             fi        
+            ;;
+            
+        unformatted)        ;;
+                    
           
         *)  
             echo unknown filesystem: $FS_TYPE.  line $LINENO
@@ -1003,6 +1017,12 @@ media_filesystem_min(){
      
         fat16|fat32|vfat)
            FS_MIN=$(sudo fatresize -i "$PARTITION" | grep Min | cut -d : -f2 | sed 's/ //g')
+           if [[ -z $FS_MIN ]]; then  # try a different way..
+               local BYTES_CLUSTER=$(sudo fsck.fat -n -v $PARTITION | grep "bytes per cluster" | sed 's/  */ /g' | cut -d" " -f2)
+               local CLUSTERS_USED=$(sudo fsck.fat -n -v $PARTITION | grep $PARTITION | cut -d, -f2 | cut -d"/" -f1 | tr -d " ")
+               local BYTES_USED=$(( $BYTES_CLUSTER * $CLUSTERS_USED ))
+               FS_MIN=$BYTES_USED
+           fi
            if (( $? )); then 
                 ui_msg_error $LINENO "Error running fatresize for '$PARTITION'."
            fi
@@ -2037,16 +2057,22 @@ media_partition_format(){
     #run_command "sudo umount $DEVICE 2> /dev/null"
     media_volume_unmount $PARTITION $YES $VERBOSE
     
+    
+    # write zeros to partition?
+    
+    
+    
+    
     echo_white " - Formatting the partition to '$FORMAT'..."
 
     case $FORMAT in
         fat16)  
-            run_command "sudo mkfs.vfat -F16 $VERBOSE -I -n ${FS_NAME^^} $PARTITION" $LINENO $VERBOSE
+            run_command "sudo mkfs.vfat -F16 $VERBOSE -I -n '${FS_NAME^^}' $PARTITION" $LINENO $VERBOSE
             ES=$?
             ;;
 
         fat32)
-            run_command "sudo mkfs.vfat -F32 $VERBOSE -I -n ${FS_NAME^^} $PARTITION" $LINENO $VERBOSE
+            run_command "sudo mkfs.vfat -F32 $VERBOSE -I -n '${FS_NAME^^}' $PARTITION" $LINENO $VERBOSE   # from gparted
             ES=$?
             ;;
             
@@ -2077,8 +2103,13 @@ media_partition_format(){
             ;;
             
         hfs)
-            run_command "sudo mkfs.hfs $VERBOSE $FS_NAME $PARTITION" $LINENO $VERBOSE
+            # hformat -l 'HFSX' '/dev/sda3' 
+            #run_command "sudo mkfs.hfs $VERBOSE $FS_NAME $PARTITION" $LINENO $VERBOSE
+            run_command "sudo hformat -l $FS_NAME $PARTITION" $LINENO $VERBOSE
             ES=$?
+            ;;
+            
+        unformatted)  ES=
             ;;
             
         *)
@@ -2140,20 +2171,24 @@ media_partition_resize(){
         local DEVICE=$(media_device_name $1)
         local PART_NUM=$(media_device_partnum $1)
         local SIZE=${2:-min}
+        local FORCE
         local BLOCK_SIZE=$(media_disk_blocksize $DEVICE)
         local END
         local FS_TYPE
  
         local YESNO
         local VERBOSE
+        local FORCE
         getargs $*
 
 
         # skip if fat32
         FS_TYPE=$(media_partition_fs_type $PARTITION)
         if [[ $FS_TYPE = fat32 ]] || [[ $FS_TYPE = fat16 ]]; then
-            echo_white fat16 and fat32 partitions resize automatically
-            return
+            echo_white fat16 and fat32 partitions resize automatically.  Use -f to force it.
+            if [[ $FORCE != -f ]]; then
+              return
+            fi
         fi
 
 
@@ -2172,14 +2207,15 @@ media_partition_resize(){
             
         max)
             END=$(media_partition_max $PARTITION) 
-            END=$(( $END - 1024 ))
+            END=$(( $END - 1 ))  # could this be -1?  512 may be needed
             
             # align  END
-            if [[ $(( $(($END + 1 )) % $BLOCK_SIZE )) -ne 0 ]] ; then   # if 0 then it is aligned
-              #  END=$(( $END + $BLOCK_SIZE ))  # add another block
-                END=$(( $END / $BLOCK_SIZE * BLOCK_SIZE ))  # trunkcate to next block
-                END=$(( $END - 1 ))
-            fi           
+            # dont align END if MAX
+         #   if [[ $(( $(($END + 1 )) % $BLOCK_SIZE )) -ne 0 ]] ; then   # if 0 then it is aligned
+         #     #  END=$(( $END + $BLOCK_SIZE ))  # add another block
+         #       END=$(( $END / $BLOCK_SIZE * BLOCK_SIZE ))  # trunkcate to next block
+         #       END=$(( $END - 1 ))
+         #   fi           
             ;;
                 
         *)
@@ -2686,6 +2722,8 @@ media_filesystem_rename() {
 media_filesystem_resize(){
     #Resize filesystemst run using both the -n and 
     
+    # notes on error:   https://askubuntu.com/questions/962829/resizing-fat32-partition-in-command-line-without-losing-data
+    
     if [[ -z $1 ]]; then
         echo "Usage: diskutil resizeFilesystem partition [min max size] [-y] [-v]"
         echo "Example:  "
@@ -2719,7 +2757,7 @@ media_filesystem_resize(){
 
     case $FS_TYPE in
     
-        fat16|fat32)        
+        fat16|fat32|vfat)        
             # You can't resize FAT32 partition lesser than 512Mb ??
              case $SIZE in
                  min)  
@@ -3197,7 +3235,8 @@ media_volume_resize(){
         
         *)      NEW_SIZE=$(bytes $SIZE -b)       ;;
     esac
-    
+ 
+echo_debug $LINENO NEW_SIZE=$NEWSIZE    
     
     echo_white "Repairing filesystem before resize..."
     media_filesystem_repair $PARTITION $YESNO $VERBOSE
@@ -3226,7 +3265,7 @@ media_volume_resize(){
    # ui_countdown 10 "RESIZE PARTITION"  # "Resizing Partition '$(media_name $DEVICE)' in 10 seconds...\n\n"
    # if (( $? )); then return 1; fi
 
-    
+echo_debug $LINENO NEW_SIZE=$NEW_SIZE FS_SIZE=$FS_SIZE    
     
     # shrink
     if [[ $NEW_SIZE -lt $FS_SIZE ]]; then
@@ -3893,8 +3932,8 @@ case $CMD in
     
     verifyFS)               media_filesystem_check $2 $3 $4 ;;
     repairFS)               media_filesystem_repair $2 $3 $4 ;;
-    resizePart)             media_partition_resize $2 $3 $4 $5 ;;
-    resizeFS)               media_filesystem_resize $2 $3 $4 $5;;    
+    resizePart)             media_partition_resize $2 $3 $4 $5 $6;;
+    resizeFS)               media_filesystem_resize $2 $3 $4 $5 $6;;    
     
     partitionDisk)          media_disk_createpartitiontable $2 $3 $4 ;;
     
