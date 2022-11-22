@@ -1,7 +1,7 @@
 # diskutil
 Disk Utility for Linux
 
-Simplify disk management in linux.  It is modeled off apple's diskutil.
+Simplifies disk management in linux.  It is modeled off apple's diskutil.
 
 NOTE, THIS IS IN DEVELOPMENT.  USE AT YOUR OWN RISK!!
 
