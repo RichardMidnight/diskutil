@@ -12,7 +12,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.29"  #2022-11-18
+VER="0.1.30"  #2022-11-18
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -239,7 +239,7 @@ env_install_fs_support(){
             ;;
             
         hfs+)
-            if [[ -z $(env_which hformat) ]] ; then
+            if [[ -z $(env_which mkfs.hfsplus ) ]] ; then   #hformat
                 echo Installing hfs+ support...
                 sudo $INSTALL hfsplus 
                 sudo $INSTALL hfsutils    
@@ -1310,10 +1310,10 @@ media_disk_info(){
     getargs $*
     
     echo_white Disk and Partition info $DEVICE
-    run_command "sudo parted $DEVICE print free" $LINENO $VERBOSE
+    run_command "sudo parted $DEVICE print free" $LINENO -v
     
     echo_white Filesystem info
-    run_command "lsblk -f $DEVICE" $LINENO $VERBOSE
+    run_command "lsblk -f $DEVICE" $LINENO -v
     echo
     
     if [[ $VERBOSE = -v ]]; then
@@ -2115,7 +2115,7 @@ media_partition_format(){
             
         hfs+)
             # hformat -l 'HFSX' '/dev/sda3' 
-            run_command "sudo mkfs.hfs -v $FS_NAME $PARTITION" $LINENO $VERBOSE  # -v=volumename
+            run_command "sudo mkfs.hfsplus -v $FS_NAME $PARTITION" $LINENO $VERBOSE  # -v=volumename
             #run_command "sudo hformat -l $FS_NAME $PARTITION" $LINENO $VERBOSE
             ES=$?
             ;;
@@ -2996,11 +2996,11 @@ media_volume_info(){
    # echo
 
     echo_white Disk and Partition info $DEVICE
-    run_command "sudo parted $DEVICE print free" $LINENO $VERBOSE
+    run_command "sudo parted $DEVICE print free" $LINENO -v
 
     #echo
     echo_white Filesystem info $PARTITION
-    run_command "lsblk -f $PARTITION" $LINENO $VERBOSE
+    run_command "lsblk -f $PARTITION" $LINENO -v
     
 
 
@@ -3922,9 +3922,9 @@ case $CMD in
         fi    
       
         if [[ $(media_device_type $2) = disk ]]; then
-            media_disk_info $2 $3 $4 -v
+            media_disk_info $2 $3 $4 $5
         else
-            media_volume_info $2 $3 $4 -v
+            media_volume_info $2 $3 $4 $5
             echo
         fi
         ;;
