@@ -12,7 +12,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.32"  #2022-11-18
+VER="0.1.34"  #2022-11-18
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -996,7 +996,7 @@ media_filesystem_ismounted(){
     fi
     
     
-    if [[ -z $(df | grep ^$PARTITION) ]]; then
+    if [[ -z $(sudo df | grep ^$PARTITION) ]]; then
         # not mounted
         return 
     else
@@ -1092,10 +1092,14 @@ media_filesystem_size(){
      
      case $FS_TYPE in
         fat16|fat32|vfat)
-            #FS_SIZE=$(sudo fatresize -i "$PARTITION" | grep "Cur size" | cut -d: -f2 | sed 's/ //g')
-            #FS_SIZE=$(sudo fatresize -i "$PARTITION" | grep "Size:" | cut -d: -f2 | sed 's/ //g')
+            FS_SIZE=$(sudo fatresize -i "$PARTITION" | grep "Cur size" | cut -d: -f2 | sed 's/ //g')
             
-            FS_SIZE=$(sudo fsck.fat -n -v $PARTITION | grep "data clusters" | cut -d\( -f2 | cut -d" " -f1)
+            if [[ -z $FS_SIZE ]]; then
+            
+            FS_SIZE=$(sudo fatresize -i "$PARTITION" | grep "Size:" | cut -d: -f2 | sed 's/ //g')
+            fi
+            
+            #FS_SIZE=$(sudo fsck.fat -n -v $PARTITION | grep "data clusters" | cut -d\( -f2 | cut -d" " -f1)
             ;;
             
             
@@ -1440,10 +1444,10 @@ media_disk_initialize(){
     fi
     
     # quit if is mounted
-    if [[ ! -z "$(df | grep ^$DISK)" ]] ; then
+    if [[ ! -z "$(sudo df | grep ^$DISK)" ]] ; then
         ui_msg_error $LINENO "$DISK is mounted"
         ui_msg_error $LINENO "Try diskutil unmountDisk $DISK"
-        df | grep ^$DISK
+        sudo df | grep ^$DISK
         return 1
     fi
     
@@ -1705,7 +1709,7 @@ media_disk_mount(){
         PARTITION_COUNT=$(media_disk_partcount $DISK)
         
         for ((PART=1 ; PART<=$PARTITION_COUNT; PART++)) ; do
-             if [ -z "$(df | grep ^$DISK$PART)" ]; then
+             if [ -z "$(sudo df | grep ^$DISK$PART)" ]; then
                 #run_command "udisksctl mount -b $DISK$PART" $LINENO 2>/dev/null
                 media_volume_mount $DISK$PART -y $VERBOSE
              fi   
@@ -1737,7 +1741,7 @@ media_disk_unmount(){
         PARTITION_COUNT=$(media_disk_partcount $DISK)
     
         for ((PART=1 ; PART<=$PARTITION_COUNT; PART++)) ; do
-            if [ ! -z "$(df | grep ^$DISK$PART)" ]; then
+            if [ ! -z "$(sudo df | grep ^$DISK$PART)" ]; then
                 #run_command "udisksctl unmount -b $TARGET$PART" $LINENO  2>/dev/null
                 media_volume_unmount $DISK$PART -y $VERBOSE
             fi    
@@ -2060,8 +2064,10 @@ media_partition_format(){
     media_device_checktarget $PARTITION part
     if (( $? )); then return 1; fi
     
+    local SIZE=$(bytes $(media_partition_size $PARTITION) -h)
+    local FS_TYPE=$(media_partition_fs_type $PARTITION)
 
-    if ! (( $(ui_yesno "ERASE MEDIA" "WARNING!  Do you want to erase $PARTITION" $YESNO) )); then
+    if ! (( $(ui_yesno "ERASE MEDIA" "WARNING!  Do you want to erase '$SIZE' '$FS_TYPE' '$PARTITION'" $YESNO) )); then
         return
     fi
 
@@ -2280,8 +2286,13 @@ media_partition_resize(){
         if [[ $FS_TYPE = ntfs ]]; then
     #    echo_debug $LINENO $PARTITION $FS_TYPE
             echo_white Fixing ntfs file system ...
+            sleep .5
             run_command "sudo ntfsfix -d $PARTITION" $LINENO
-            if (( $? )); then return 1; fi
+            if (( $? )); then # run it again
+				sleep 1
+                run_command "sudo ntfsfix -d $PARTITION" $LINENO
+				if (( $? )); then return 1; fi
+            fi
         fi
         
         echo_white "$PARTITION partition resized to $( bytes $(( $END - $(media_partition_start $PARTITION) )) -h)"
@@ -2493,7 +2504,7 @@ media_filesystem_check() {
             run_command "sudo ntfsfix -n $PARTITION" $LINENO  $VERBOSE  # fsck for ntfs.  limited.  -n no-op
             rc=$?
             
-            sleep .5
+            sleep 2
             run_command "sudo ntfsresize -i -f -n $VERBOSE $PARTITION" $LINENO  $VERBOSE  # -n no-op
             rc2=$?           
             
@@ -2551,7 +2562,7 @@ media_filesystem_check() {
     esac
     echo
     
-    
+    sleep .5
     # now check filesystem endpoints vs partition
     local FS_SIZE=$(media_filesystem_size $PARTITION)
     local PART_SIZE=$(media_partition_size $PARTITION)
@@ -2577,6 +2588,8 @@ media_filesystem_check() {
     
     ui_echo "Finished file system verification on '$PARTITION'." green
 }
+
+
 
 
 media_filesystem_repair() {
@@ -2652,8 +2665,11 @@ media_filesystem_repair() {
         ntfs)
             # clear the dirty bit
             run_command "sudo ntfsfix -d $PARTITION" $LINENO $VERBOSE
-            if (( $? )); then return 1 ; fi
-            
+            if (( $? )); then # run it again
+				sleep .5
+				run_command "sudo ntfsfix -d $PARTITION" $LINENO $VERBOSE
+				if (( $? )); then return 1 ; fi
+            fi
            # echo "Repairing ntfs filesystem..."         
             run_command "sudo ntfsresize -i -f $PARTITION" $LINENO $VERBOSE  # from gparted
             rc=$?
@@ -2678,6 +2694,7 @@ media_filesystem_repair() {
             rc=$?
             if (( $rc )); then
                 ui_msg_error $LINENO "Failed with rc $rc"
+                return 1
                # info "Trying to recover corrupted filesystem - Phase 2"
                # e2fsck -f -y -b 32768 "$PARTITION"
                # (( $? < 4 )) && return
@@ -2687,6 +2704,7 @@ media_filesystem_repair() {
                 
         hfs+)
             run_command "sudo fsck.hfsplus -f -y $PARTITION"  $LINENO  $VERBOSE
+            if (( $? )); then return 1; fi
             ;;    
             
             
@@ -2794,6 +2812,14 @@ media_filesystem_resize(){
     
         fat16|fat32|vfat)        
             # You can't resize FAT32 partition lesser than 512Mb ??
+            
+            # test that fatresize works.
+            TEST_SIZE=$(media_filesystem_size $PARTITION)
+            if [[ $(is_number $TEST__SIZE) == false ]]; then
+				ui_msg_error $LINENO "fatresize does not work on this system."
+				return 1
+            fi
+            
              case $SIZE in
                  min)  
                 echo_debug $LINENO setting to min                 
@@ -2941,7 +2967,7 @@ media_volume_mount(){
     fi
     
     
-    if [[ ! -z "$(df | grep ^$PARTITION)" ]]; then  # it is already mounted
+    if [[ ! -z "$(sudo df | grep ^$PARTITION)" ]]; then  # it is already mounted
         return
     fi    
     
@@ -2970,7 +2996,7 @@ media_volume_unmount(){
         exit 1
     fi
     
-    if [ ! -z "$(df | grep ^$PARTITION)" ]; then
+    if [ ! -z "$(sudo df | grep ^$PARTITION)" ]; then
     
         if (( $(ui_yesno "UNMOUNT" "Unmount $PARTITION?" $YESNO) )); then
             run_command "udisksctl unmount -b $PARTITION" $LINENO $VERBOSE
@@ -3019,7 +3045,7 @@ media_volume_info(){
 
 
     #echo
-    
+    media_volume_unmount $PARTITION $YESNO $VERBOSE
     
 
     if [[ $VERBOSE = -v ]]; then
@@ -3301,7 +3327,7 @@ echo_debug $LINENO NEW_SIZE=$NEWSIZE
 
     local VOLUME_SIZE=$(bytes $(media_filesystem_size $PARTITION) -h)
 
-    if  (( ! $(ui_yesno "RESIZE" "Resize '$DEVICE' from '$VOLUME_SIZE' to '$NEW_SIZE'" $YESNO) )); then
+    if  (( ! $(ui_yesno "RESIZE" "Resize '$DEVICE' from '$VOLUME_SIZE' to '$(bytes $NEW_SIZE -h)' ($NEW_SIZE)" $YESNO) )); then
         echo Resize canceled.
         return 0
     fi
@@ -3351,7 +3377,7 @@ echo_debug $LINENO NEW_SIZE=$NEW_SIZE FS_SIZE=$FS_SIZE
       
       
       
-    sleep 1  
+    sleep 2  
     echo  
     echo_white " - Resize step 3: Checking filesytem on $PARTITION..."
     media_filesystem_check $PARTITION $YESNO $VERBOSE
