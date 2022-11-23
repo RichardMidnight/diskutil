@@ -12,7 +12,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.35"  #2022-11-18
+VER="0.1.36"  #2022-11-18
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -1478,7 +1478,7 @@ media_disk_addpartition(){
     # add a partition.  Use bytes, optimize to 512 or 4*512
     
     if [[ -z $1 ]]; then
-        echo "Usage: diskutil addPartition device [format] [size] [name] [-y]"
+        echo "Usage: diskutil addPartition device [size] [format] [name] [-y]"
         echo "  Format is: fat16 | fat32 | exfat | ntfs | ext2 | ext3 | ext4 | linux-swap"
         echo Example: diskutil addPartition disk3 ntfs 2g Untitled 
         echo Example: diskutil addPartition sda exfat 3g NEWDISK 
@@ -1486,8 +1486,8 @@ media_disk_addpartition(){
     fi
     
     local DEVICE=$(media_device_name $1)
-    local FORMAT=${2:-fat32}    # fat16, fat32, exfat, ntfs, ext2, ext3, ext4
-    local SIZE=${3:-max}
+    local SIZE=${2:-max}
+    local FORMAT=${3:-fat32}    # fat16, fat32, exfat, ntfs, ext2, ext3, ext4
     local NAME=${4:-NEW}
 
     local YESNO
@@ -1659,8 +1659,9 @@ media_disk_delpartition(){
     if (( $? )); then exit 1; fi   
     
     
-    
-    if (( ! $(ui_yesno "DEL PARTITION" "Delete Partition $PARTITION" $YESNO) )); then
+	local SIZE=$(bytes $(media_partition_size $PARTITION) -h)
+	local FS=$(media_partition_fs_type $PARTITION)
+    if (( ! $(ui_yesno "DEL PARTITION" "Delete '$SIZE' '$FS' partition '$PARTITION'" $YESNO) )); then
         return 1
     fi
 
@@ -2087,12 +2088,12 @@ media_partition_format(){
 
     case $FORMAT in
         fat16)  
-            run_command "sudo mkfs.vfat -F16 $VERBOSE -I -n '${FS_NAME^^}' $PARTITION" $LINENO $VERBOSE
+            run_command "sudo mkfs.fat -F16 $VERBOSE -I -n '${FS_NAME^^}' $PARTITION" $LINENO $VERBOSE
             ES=$?
             ;;
 
         fat32)
-            run_command "sudo mkfs.vfat -F32 $VERBOSE -I -n '${FS_NAME^^}' $PARTITION" $LINENO $VERBOSE   # from gparted
+            run_command "sudo mkfs.fat -F32 $VERBOSE -I -n '${FS_NAME^^}' $PARTITION" $LINENO $VERBOSE   # from gparted
             ES=$?
             ;;
             
@@ -2112,17 +2113,17 @@ media_partition_format(){
             ES=$?
             ;;
             
-        ext4)
-            run_command "sudo mkfs.ext4 $VERBOSE -F -O ^64bit -L $FS_NAME $PARTITION" $LINENO $VERBOSE   # from Gparted
-            ES=$?
-            ;;
+      #  ext4)
+      #      run_command "sudo mkfs.ext4 $VERBOSE -F -O ^64bit -L $FS_NAME $PARTITION" $LINENO $VERBOSE   # from Gparted
+      #      ES=$?
+      #      ;;
             
         linux-swap)
             run_command "sudo mkswap -L '' $PARTITION" $LINENO $VERBOSE # from gparted
             ES=$?
             ;;
             
-        hfs+)
+        hfs+|hfsplus|hfs)
             # hformat -l 'HFSX' '/dev/sda3' 
             #run_command "sudo mkfs.hfsplus -v $FS_NAME $PARTITION" $LINENO $VERBOSE  # -v=volumename
             #run_command "sudo hformat -l $FS_NAME $PARTITION" $LINENO $VERBOSE
@@ -2814,7 +2815,7 @@ media_filesystem_resize(){
             # test that fatresize works.
             TEST_SIZE=$(sudo fatresize -i $PARTITION | grep Size: | cut -d: -f2)
             if [[ $(is_number $TEST_SIZE) = false ]]; then
-				ui_msg_error $LINENO "RESIZE" "fatresize does not work on this system. May be a problem on arm-64."
+				ui_msg_error $LINENO "RESIZE" "fatresize does not work on this system. May be limited to arm-64."
 				return 1
             fi
             
@@ -2858,7 +2859,7 @@ media_filesystem_resize(){
             
         
         exfat)
-            echo "Can not resize exfat file systems. Recomend using Windows."
+            ui_msg_error $LINENO RESIZE "Cannot resize exfat filesystems.  Use Windows or DOS."
             return
             ;;
             
@@ -2916,7 +2917,7 @@ media_filesystem_resize(){
             
             
         hfs+)
-            echo "Can not resize hfs+ file systems. Recomend using Apple."
+            ui_msg_error $LINENO RESIZE "Cannot resize hfs filesystems.  Use Apple."
             return
             ;;    
             
@@ -3179,7 +3180,8 @@ media_volume_add(){
     # add a volume. 
     
     if [[ -z $1 ]]; then
-        echo "Usage: diskutil addVolume disk [format] [size] [name] [-y]"
+        echo "Usage: diskutil addVolume disk [size] [format] [name] [-y]"
+        echo
         echo "  Format is: fat16 | fat32 | exfat | ntfs | ext2 | ext3 | ext4 | linux-swap"
         echo Example: diskutil addVolume disk3 ntfs 2g Untitled 
         echo Example: diskutil addVolume sda exfat 3g NEWDISK 
@@ -3187,8 +3189,8 @@ media_volume_add(){
     fi
     
     local DEVICE=$(media_device_name $1)
-    local FORMAT=${2:-fat32}    # fat16, fat32, exfat, ntfs, ext2, ext3, ext4
-    local SIZE=${3:-max}
+    local FORMAT=${3:-fat32}    # fat16, fat32, exfat, ntfs, ext2, ext3, ext4
+    local SIZE=${2:-max}
     local NAME=${4:-NEW}
     
     local YESNO
@@ -3200,7 +3202,7 @@ media_volume_add(){
     echo_white Add Volume to $DEVICE ...
     
     # add a partition
-    media_disk_addpartition $DEVICE $FORMAT $SIZE $NAME $YESNO $VERBOSE
+    media_disk_addpartition $DEVICE $SIZE $FORMAT $NAME $YESNO $VERBOSE
     if (( $? )); then return 1; fi
     
     #confirm new partition was made
@@ -3279,12 +3281,12 @@ media_volume_resize(){
     if (( $? )); then return 1; fi
     
     if [[ $(media_partition_fs_type $PARTITION) = exfat ]]; then
-        echo Cannot resize exfat filesystems.  Use Windows.
+        ui_msg_error $LINENO RESIZE "Cannot resize exfat filesystems.  Use Windows."
         return 1
     fi
     
     if [[ $(media_partition_fs_type $PARTITION) = hfs+ ]]; then
-        echo Cannot resize hfs+ filesystems.  Use Apple.
+        ui_msg_error $LINENO RESIZE "Cannot resize hfs filesystems.  Use Apple."
         return 1
     fi
     
