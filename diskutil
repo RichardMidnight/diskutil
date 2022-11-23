@@ -12,7 +12,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.34"  #2022-11-18
+VER="0.1.35"  #2022-11-18
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -1092,14 +1092,12 @@ media_filesystem_size(){
      
      case $FS_TYPE in
         fat16|fat32|vfat)
-            FS_SIZE=$(sudo fatresize -i "$PARTITION" | grep "Cur size" | cut -d: -f2 | sed 's/ //g')
+            #FS_SIZE=$(sudo fatresize -i "$PARTITION" | grep "Cur size" | cut -d: -f2 | sed 's/ //g')
+            #if [[ -z $FS_SIZE ]]; then
+            #    FS_SIZE=$(sudo fatresize -i "$PARTITION" | grep "Size:" | cut -d: -f2 | sed 's/ //g')
+            #fi
             
-            if [[ -z $FS_SIZE ]]; then
-            
-            FS_SIZE=$(sudo fatresize -i "$PARTITION" | grep "Size:" | cut -d: -f2 | sed 's/ //g')
-            fi
-            
-            #FS_SIZE=$(sudo fsck.fat -n -v $PARTITION | grep "data clusters" | cut -d\( -f2 | cut -d" " -f1)
+            FS_SIZE=$(sudo fsck.fat -n -v $PARTITION | grep "data clusters" | cut -d\( -f2 | cut -d" " -f1)
             ;;
             
             
@@ -2814,9 +2812,9 @@ media_filesystem_resize(){
             # You can't resize FAT32 partition lesser than 512Mb ??
             
             # test that fatresize works.
-            TEST_SIZE=$(media_filesystem_size $PARTITION)
-            if [[ $(is_number $TEST__SIZE) == false ]]; then
-				ui_msg_error $LINENO "fatresize does not work on this system."
+            TEST_SIZE=$(sudo fatresize -i $PARTITION | grep Size: | cut -d: -f2)
+            if [[ $(is_number $TEST_SIZE) = false ]]; then
+				ui_msg_error $LINENO "RESIZE" "fatresize does not work on this system. May be a problem on arm-64."
 				return 1
             fi
             
