@@ -10,9 +10,12 @@
 #REF  https://recoverit.wondershare.com/harddrive-tips/format-and-wipe-linux-disk.html
 # partition, format, wipe, shred, scrub
 
+# modos gpt
+# https://serverfault.com/questions/963178/how-do-i-convert-my-linux-disk-from-mbr-to-gpt-with-uefi
+
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.36"  #2022-11-18
+VER="0.1.38"  #2022-11-18
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -3865,20 +3868,20 @@ Usage:  diskutil [quiet] <verb> <options> [-y] [-v], where <verb> is as follows:
      info[rmation]      (Get information on a specific disk or volume)
      listFilesystems    (List supported file systems)
 
+     mount              (Mount a single volume)
      u[n]mount          (Unmount a single volume)
+     mountDisk          (Mount an entire disk (all mountable volumes))     
      unmountDisk        (Unmount an entire disk (all volumes))
      eject              (Unmount all volumes and Eject a disk)
-     mount              (Mount a single volume)
-     mountDisk          (Mount an entire disk (all mountable volumes))
 
-     rename[Volume]     (Rename a volume)
+     rename     		(Rename a volume)
 
-     verifyVolume       (Verify the data structures of a volume)
-     repairVolume       (Repair the data structures of a volume)
+     verify       		(Verify the data structures of a volume)
+     repair       		(Repair the data structures of a volume)
      verifyDisk         (Verify the components of a partition map of a disk)
      repairDisk         (Repair the components of a partition map of a disk)
      
-     resizeVolume       (Resize a volume, increasing or decreasing its size)
+     resize       		(Resize a volume, increasing or decreasing its size)
 
 
   -- DESTRUCTIVE VERBS ---
@@ -3971,20 +3974,20 @@ case $CMD in
     
     listFilesystems)        echo "Supported file systems: $FILESYSTEMS "    ;;
 
+    mount)                  media_volume_mount $2 $3 $4 -y ;;  
     umount|unmount)         media_volume_unmount $2 $3 $4 -y ;;  
+    mountDisk)              media_disk_mount $2 $3 $4;;
     umountDisk|unmountDisk) media_disk_unmount $2 $3 $4;;
     eject)                  media_disk_eject $2 $3 $4;;
-    mount)                  media_volume_mount $2 $3 $4 -y ;;      
-    mountDisk)              media_disk_mount $2 $3 $4;;
 
-    rename|renameVolume)    media_filesystem_rename $2 $3 $4 $5;;
+    rename)    				media_filesystem_rename $2 $3 $4 $5;;
     
-    verifyVolume)           media_volume_verify $2 $3 $4;;
-    repairVolume)           media_volume_repair $2 $3 $4 ;;
+    verify)		            media_volume_verify $2 $3 $4;;
+    repair)     	        media_volume_repair $2 $3 $4 ;;
     verifyDisk)             media_disk_verify $2 $3;; 
     repairDisk)             media_disk_repair $2 $3;; 
     
-    resizeVolume)           media_volume_resize $2 $3 $4 $5;;
+    resize)           		media_volume_resize $2 $3 $4 $5;;
 
 # destructive verbs
     
