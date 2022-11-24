@@ -15,7 +15,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.38"  #2022-11-18
+VER="0.1.39"  #2022-11-24
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -873,11 +873,18 @@ media_device_checktarget(){
         fi    
     fi
 
-    
     if  [[ $(media_device_type $DEVICE) != $TYPE ]]; then
         ui_msg_error $LINENO "Device '$DEVICE' is not type '$TYPE'"
         return 1  
     fi        
+    
+    # Stop if dev is the root device
+    if [[ $DEVICE = $(env_root_device) ]]; then
+        ui_msg_error $LINENO "Device '$DEVICE' is root device"
+        return 3
+    fi
+    
+    
 }
 
 
@@ -1418,14 +1425,6 @@ media_disk_initialize(){
         PT_TYPE=msdos
     fi
     
-    
-    #if [[ $PT_TYPE = "msdos" ]] || [[ $PT_TYPE == "gpt" ]] ; then
-    #    x=1
-    #else
-    #    echo "Unsupported partition table type '$PT_TYPE'.  [ gpt | msdos ] "
-    #    return 2
-    #fi
-    
     case $PT_TYPE in
         msdos|gpt) ;;
         *)
@@ -1438,20 +1437,22 @@ media_disk_initialize(){
     media_device_checktarget $DISK disk
     if (( $? )); then exit 1; fi    
     
-
     if [[ $DISK = $ROOT ]] ; then
         ui_msg_error $LINENO "Can not format root disk"
         return 3
     fi
     
-    # quit if is mounted
-    if [[ ! -z "$(sudo df | grep ^$DISK)" ]] ; then
-        ui_msg_error $LINENO "$DISK is mounted"
-        ui_msg_error $LINENO "Try diskutil unmountDisk $DISK"
-        sudo df | grep ^$DISK
-        return 1
-    fi
     
+    # quit if is mounted
+   # if [[ ! -z "$(sudo df | grep ^$DISK)" ]] ; then
+    #    ui_msg_error $LINENO "$DISK is mounted"
+    #    ui_msg_error $LINENO "Try diskutil unmountDisk $DISK"
+    #    sudo df | grep ^$DISK
+    ##    return 1
+    #fi
+    
+    #echo "Unmounting '$DEVICE'..."
+    media_disk_unmount $DEVICE $YESNO $VERBOSE
     
     if (( ! $(ui_yesno "ERASE MEDIA" "WARNING!!  Erase all data on '$DISK' " "$YESNO") )); then
         ui_msg "ERASE MEDIA" "~ $DISK not erased. " "" "" log
@@ -1460,7 +1461,6 @@ media_disk_initialize(){
 
   #  ui_countdown 10 "ERASE MEDIA"  # "Erasing Media '$(media_name $DISK)' in 10 seconds...\n\n"
   #  if (( $? )); then return 1; fi
-
        
     echo "Zero the first 5K of '$DISK'..."
     run_command "sudo dd if=/dev/zero of=$DISK bs=512 count=10K" $LINENO $VERBOSE
@@ -1472,7 +1472,7 @@ media_disk_initialize(){
     
     # should confirm it worked....
     sleep 1
-    echo "'$DISK' initialied with Partition Table Type '$(media_disk_pt_type $DISK )'"    
+    echo "'$DISK' initialied with Partition Table Type '$(media_disk_pt_type $DISK)'"    
 }
 
 
@@ -1481,10 +1481,10 @@ media_disk_addpartition(){
     # add a partition.  Use bytes, optimize to 512 or 4*512
     
     if [[ -z $1 ]]; then
-        echo "Usage: diskutil addPartition device [size] [format] [name] [-y]"
-        echo "  Format is: fat16 | fat32 | exfat | ntfs | ext2 | ext3 | ext4 | linux-swap"
-        echo Example: diskutil addPartition disk3 ntfs 2g Untitled 
-        echo Example: diskutil addPartition sda exfat 3g NEWDISK 
+        echo "Usage: diskutil addPartition device [size] [format] [name] [-y] [-v]"
+        echo "  Format is: fat16 | fat32 | exfat | ntfs | ext2 | ext3 | ext4 | linux-swap | hfs"
+        echo Example: diskutil addPartition disk3 2g ntfs Untitled 
+        echo Example: diskutil addPartition sda 3g exfat NEWDISK 
         return
     fi
     
@@ -1497,27 +1497,32 @@ media_disk_addpartition(){
     local VERBOSE
     getargs $*    
     
-    
-    # check parameters
-   # if [[ ! -e $DEVICE ]]; then
-   #     ui_msg_error $LINEON "Device '$DEVICE' does not exist."
-   #     return 1
-   # fi
+    #check DISK input
     media_device_checktarget $DEVICE disk
     if (( $? )); then return 1; fi
 
+	# check FORMAT input
     if [[ "$FILESYSTEMS" != *"$FORMAT"* ]]; then
         ui_msg_error $LINENO "Unknown format '$FORMAT'."
         return 1
     fi
-    
-    # this needs work...
-    if [[ $(is_number $(bytes $SIZE -b)) != true ]] && [[ $SIZE != min ]] && [[ $SIZE != max ]]; then
-        ui_msg_error $LINENO "Invalid size '$SIZE'"
-        return 1
-    fi 
-    
-    
+  
+    # check SIZE input
+    case $SIZE in
+		min)   ;;
+		max)	;;
+		*)
+			if [[ $(is_number $(bytes $SIZE -b)) != true ]]; then
+				ui_msg_error $LINENO "Invalid size '$SIZE'"
+				return 1
+			fi
+			;;
+    esac
+    		
+   # if [[ $(is_number $(bytes $SIZE -b)) != true ]] && [[ $SIZE != min ]] && [[ $SIZE != max ]]; then
+   #     ui_msg_error $LINENO "Invalid size '$SIZE'"
+   #     return 1
+   # fi 
     
     local BLOCK_SIZE=$(media_disk_blocksize $DEVICE)
     local DEVICE_SIZE=$(media_device_size $DEVICE)
@@ -1547,6 +1552,7 @@ media_disk_addpartition(){
     media_device_checktarget "$DEVICE" disk 
     if (( $? )); then return 1; fi 
     
+    # is this done in checktarget? might not be needed
     # Stop if dev is the root device
     if [[ $DEVICE = $(env_root_device) ]]; then
         ui_msg_error $LINENO "Format root device not allowed"
@@ -1556,9 +1562,9 @@ media_disk_addpartition(){
 
     # set END
     case $SIZE in
-        min)        END=$(( $BEG + $(( 1024 * 1024 )) ))        ;;
-        max)        END="100%"                ;;
-        *)          END=$(( $BEG + $(bytes $SIZE -b) ))         ;;
+        min)        END=$(( $BEG + $(( 1024 * 1024 )) ))    ;;
+        max)        END="100%"                				;;
+        *)          END=$(( $BEG + $(bytes $SIZE -b) ))     ;;
     esac
 
 
@@ -1571,7 +1577,7 @@ media_disk_addpartition(){
         fi
     fi 
  
- 
+	# align END
     END=$(media_disk_align $DEVICE $END rounddown )
     if [[ $(is_number $END) = true ]]; then
         END=$(( $END -1 ))
@@ -1619,6 +1625,7 @@ media_disk_addpartition(){
 
     sleep 1
     
+    # this should be improved to find the actual partition number
     # Check that the partition was added
     if [[ $(media_disk_partcount $DEVICE) -ne $PART_NUM ]]; then
         ui_msg_error $LINENO "Add Partition unsuccessful"
@@ -2052,6 +2059,9 @@ media_partition_format(){
     local FORMAT=${2:-fat32}
     local FS_NAME=${3:-NEW}
     
+    
+#echo_debug $LINENO $FORMAT   $2 
+    
     local YESNO
     local VERBOSE
     getargs $*
@@ -2069,7 +2079,7 @@ media_partition_format(){
     local SIZE=$(bytes $(media_partition_size $PARTITION) -h)
     local FS_TYPE=$(media_partition_fs_type $PARTITION)
 
-    if ! (( $(ui_yesno "ERASE MEDIA" "WARNING!  Do you want to erase '$SIZE' '$FS_TYPE' '$PARTITION'" $YESNO) )); then
+    if ! (( $(ui_yesno "ERASE MEDIA" "WARNING!  Do you want to erase '$SIZE' '$FS_TYPE' '$PARTITION' as '$FORMAT'" $YESNO) )); then
         return
     fi
 
@@ -2081,10 +2091,7 @@ media_partition_format(){
     #run_command "sudo umount $DEVICE 2> /dev/null"
     media_volume_unmount $PARTITION $YES $VERBOSE
     
-    
     # write zeros to partition?
-    
-    
     
     
     echo_white " - Formatting the partition to '$FORMAT'..."
@@ -2111,15 +2118,15 @@ media_partition_format(){
             ES=$?
             ;;
         
-        ext2 | ext3 | ext4)
+        ext2 | ext3)
             run_command "sudo mkfs $VERBOSE -t $FORMAT -L $FS_NAME -E root_owner=$UID:$GID -F $PARTITION" $LINENO $VERBOSE
             ES=$?
             ;;
             
-      #  ext4)
-      #      run_command "sudo mkfs.ext4 $VERBOSE -F -O ^64bit -L $FS_NAME $PARTITION" $LINENO $VERBOSE   # from Gparted
-      #      ES=$?
-      #      ;;
+        ext4)
+            run_command "sudo mkfs.ext4 $VERBOSE -F -O ^64bit -L $FS_NAME $PARTITION" $LINENO $VERBOSE   # from Gparted
+            ES=$?
+            ;;
             
         linux-swap)
             run_command "sudo mkswap -L '' $PARTITION" $LINENO $VERBOSE # from gparted
@@ -2139,6 +2146,9 @@ media_partition_format(){
             elif [[ ! -z $(env_which hformat ) ]]; then
                 run_command "sudo hformat -l $FS_NAME $PARTITION" $LINENO $VERBOSE
                 ES=$?
+            else
+				ui_msg_error $LINENO "Can't find a '$FS_NAME' formatting tool"
+				return 1
             fi
             ;;
             
@@ -2152,12 +2162,11 @@ media_partition_format(){
     if (( $ES )); then
         ui_msg_error $LINENO "mkfs for '$FORMAT' failed"
         return 1
-   # else
-   #     ui_msg "ERASE MEDIA" "~ Format complete. '$PARTITION' has been erased." white "" log
-  
+    else
+        ui_msg "ERASE MEDIA" "~ '$PARTITION' has been erased. Formatted as '$FORMAT'" white "" log
     fi
     
-     echo "Volume '$PARTITION' erased.  Formatted as '$FORMAT'"
+   #  echo "Volume '$PARTITION' erased.  Formatted as '$FORMAT'"
 }
 
 
@@ -2187,6 +2196,8 @@ media_partition_reformat(){
         echo $FS is not a supported filesystem
         return 1
     fi
+
+    #echo_debug $LINENO "$PARTITION '$FS' '$NAME' $YESNO $VERBOSE"
 
     media_partition_format $PARTITION $FS $NAME $YESNO $VERBOSE
 }
