@@ -15,7 +15,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.39"  #2022-11-24
+VER="0.1.40"  #2022-11-24
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -2814,9 +2814,9 @@ media_filesystem_resize(){
     
  
 
-    echo_white "Check filesystem for errors and fix if possible ($LINENO)"
-    media_filesystem_repair $PARTITION -y $VERBOSE
-    if (( $? )); then return 1; fi   
+ #   echo_white "Check filesystem for errors and fix if possible ($LINENO)"
+ #   media_filesystem_repair $PARTITION -y $VERBOSE
+ #   if (( $? )); then return 1; fi   
    
     echo
     echo_white "Resize '$FS_TYPE' filesystem to '$SIZE' "
@@ -2829,7 +2829,7 @@ media_filesystem_resize(){
             # test that fatresize works.
             TEST_SIZE=$(sudo fatresize -i $PARTITION | grep Size: | cut -d: -f2)
             if [[ $(is_number $TEST_SIZE) = false ]]; then
-				ui_msg_error $LINENO "RESIZE" "fatresize does not work on this system. May be limited to arm-64."
+				ui_msg_error $LINENO "RESIZE" "fatresize does not work on this system. This may be limited to arm-64."
 				return 1
             fi
             
@@ -2840,7 +2840,7 @@ media_filesystem_resize(){
                     NEW_SIZE=$(media_filesystem_min $PARTITION )
                 echo_debug $LINENO NEW_SIZE=$NEW_SIZE   
                    # MIN_SIZE=$(( $(bytes 512M -b) + $(media_disk_blocksize $DISK) + 512 ))
-                    MIN_SIZE=$(bytes 528M -b)
+                    MIN_SIZE=$(bytes 540M -b)
                     if [[ $NEW_SIZE -lt $MIN_SIZE ]] ; then
                         NEW_SIZE=$MIN_SIZE
                 echo_debug $LINENO NEW_SIZE=$NEW_SIZE                       
@@ -3321,10 +3321,28 @@ media_volume_resize(){
         *)      NEW_SIZE=$(bytes $SIZE -b)       ;;
     esac
  
-echo_debug $LINENO NEW_SIZE=$NEWSIZE    
+#echo_debug $LINENO NEW_SIZE=$NEWSIZE    
     
-    echo_white "Repairing filesystem before resize..."
-    media_filesystem_repair $PARTITION $YESNO $VERBOSE
+ 
+    
+  #  echo
+  #  echo_white "Resize partition $PARTITION to $SIZE ($NEW_SIZE)"
+    
+	local FS_TYPE=$(media_partition_fs_type $PARTITION)
+    local VOLUME_SIZE=$(bytes $(media_filesystem_size $PARTITION) -h)
+
+    if  (( ! $(ui_yesno "RESIZE" "Resize '$PARTITION' ($FS_TYPE) from '$VOLUME_SIZE' to '$(bytes $NEW_SIZE -h)' ($NEW_SIZE)" $YESNO) )); then
+        echo Resize canceled.
+        return 0
+    fi
+
+
+   # ui_countdown 10 "RESIZE PARTITION"  # "Resizing Partition '$(media_name $DEVICE)' in 10 seconds...\n\n"
+   # if (( $? )); then return 1; fi
+   
+   
+    echo_white " - Step 1/4 Repairing filesystem before resize..."
+    media_filesystem_repair $PARTITION -y $VERBOSE
     if (( $? )); then
         ui_msg_error $LINENO "Error running filesystem repair.  Cannot resize."
         if [[ $FORCE = -f ]]; then
@@ -3333,22 +3351,8 @@ echo_debug $LINENO NEW_SIZE=$NEWSIZE
             echo exiting
             return 1
         fi
-    fi     
-    
-    echo
-    echo_white "Resize partition $PARTITION to $SIZE ($NEW_SIZE)"
-    
-
-    local VOLUME_SIZE=$(bytes $(media_filesystem_size $PARTITION) -h)
-
-    if  (( ! $(ui_yesno "RESIZE" "Resize '$DEVICE' from '$VOLUME_SIZE' to '$(bytes $NEW_SIZE -h)' ($NEW_SIZE)" $YESNO) )); then
-        echo Resize canceled.
-        return 0
-    fi
-
-
-   # ui_countdown 10 "RESIZE PARTITION"  # "Resizing Partition '$(media_name $DEVICE)' in 10 seconds...\n\n"
-   # if (( $? )); then return 1; fi
+    fi    
+   
 
 echo_debug $LINENO NEW_SIZE=$NEW_SIZE FS_SIZE=$FS_SIZE    
     
@@ -3356,13 +3360,13 @@ echo_debug $LINENO NEW_SIZE=$NEW_SIZE FS_SIZE=$FS_SIZE
     if [[ $NEW_SIZE -lt $FS_SIZE ]]; then
         #echo_green Shrink...
         echo
-        echo_white " - Resize step 1: Shrink the FILESYSTEM to ..."
+        echo_white " - Resize step 2/4: Shrink the FILESYSTEM to ..."
         media_filesystem_resize $PARTITION $NEW_SIZE $YESNO $VERBOSE
         if (( $? )); then return 1; fi
         
         sleep 1
         echo
-        echo_white " - Resize step 2: Shrink PARTITION to fit FILESYSTEM..."   
+        echo_white " - Resize step 3/4: Shrink PARTITION to fit FILESYSTEM..."   
         media_partition_resize $PARTITION min $YESNO $VERBOSE
         if (( $? )); then return 1; fi
     fi
@@ -3373,13 +3377,13 @@ echo_debug $LINENO NEW_SIZE=$NEW_SIZE FS_SIZE=$FS_SIZE
     if [[ $NEW_SIZE -gt $FS_SIZE ]]; then
         #echo_green Grow...
         echo
-        echo_white " - Resize step 1: Grow the PARTTITION... " 
+        echo_white " - Resize step 2/4: Grow the PARTTITION... " 
         media_partition_resize $PARTITION $NEW_SIZE $YESNO $VERBOSE
         if (( $? )); then return 1; fi
         
         sleep 1
         echo
-        echo_white " - Resize step 2: Grow FILESYSTEM to fit PARTITION..."
+        echo_white " - Resize step 3/4: Grow FILESYSTEM to fit PARTITION..."
         #media_filesystem_resize_topart $PARTITION
         case $(media_partition_fs_type $PARTITION) in
             vfat|fat16|fat32)               ;; 
@@ -3393,7 +3397,7 @@ echo_debug $LINENO NEW_SIZE=$NEW_SIZE FS_SIZE=$FS_SIZE
       
     sleep 2  
     echo  
-    echo_white " - Resize step 3: Checking filesytem on $PARTITION..."
+    echo_white " - Resize step 4/4: Checking filesytem on $PARTITION..."
     media_filesystem_check $PARTITION $YESNO $VERBOSE
     if (( $? )); then
         ui_msg_error $LINENO "Errors on filesystem $PARTITION after resizing."
