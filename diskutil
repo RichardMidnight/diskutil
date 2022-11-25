@@ -15,7 +15,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.40"  #2022-11-24
+VER="0.1.41"  #2022-11-24
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -1044,7 +1044,9 @@ media_filesystem_min(){
             
         ntfs)
             #sudo ntfsfix -d $PARTITION
-            FS_MIN=$(sudo ntfsresize -i "$PARTITION" | grep "resize at" | cut -d t -f 3 | cut -d b -f1 | sed 's/ //g') 
+           # FS_MIN=$(sudo ntfsresize -i "$PARTITION" | grep "resize at" | cut -d t -f 3 | cut -d b -f1 | sed 's/ //g') 
+            FS_MIN=$(sudo ntfsresize -i "$PARTITION" | grep "Space in use" | cut -d: -f2 | cut -d"(" -f1 | tr -d " ") 
+            FS_MIN=$(bytes $FS_MIN -b)
             if ! (( $FS_MIN )); then
                 FS_MIN=$(media_filesystem_size $PARTITION)
             fi
@@ -1062,9 +1064,7 @@ media_filesystem_min(){
             ;;
 
         hfs+)
-            
             ;;
-
 
         *)
             ui_msg_error $LINENO "Filesystem '$FS_TYPE' unknown"
@@ -2834,28 +2834,19 @@ media_filesystem_resize(){
             fi
             
              case $SIZE in
-                 min)  
-                echo_debug $LINENO setting to min                 
-                    #NEW_SIZE=$(sudo fatresize -i $PARTITION | grep Min | cut -d: -f2 | tr -d " ")
-                    NEW_SIZE=$(media_filesystem_min $PARTITION )
-                echo_debug $LINENO NEW_SIZE=$NEW_SIZE   
-                   # MIN_SIZE=$(( $(bytes 512M -b) + $(media_disk_blocksize $DISK) + 512 ))
-                    MIN_SIZE=$(bytes 540M -b)
-                    if [[ $NEW_SIZE -lt $MIN_SIZE ]] ; then
-                        NEW_SIZE=$MIN_SIZE
-                echo_debug $LINENO NEW_SIZE=$NEW_SIZE                       
-                    fi 
-                    NEW_SIZE=" -s $(( $NEW_SIZE / 1024 ))k"
-                    ;;
-                max)                   
-                    #NEW_SIZE=$(sudo fatresize -i $PARTITION | grep Max | cut -d: -f2 | tr -d " ") 
-                    NEW_SIZE=$(( $(media_partition_max $PARTITION) - $(media_partition_start $PARTITION) ))
-                    #NEW_SIZE=$(( $NEW_SIZE - $(bytes 1m -b ) ))
-                    NEW_SIZE=" -s $(( $NEW_SIZE / 1024 ))k"
-                    ;;
-                 *) NEW_SIZE="-s $(( $(bytes $SIZE -b) / 1024 ))k"  
-                    ;;
+				min)    NEW_SIZE=$(media_filesystem_min $PARTITION )           ;;
+                max)	NEW_SIZE=$(( $(media_partition_max $PARTITION) - $(media_partition_start $PARTITION) ))     ;;
+                 *) 	NEW_SIZE=$SIZE          ;;
              esac
+            
+            #be sure not less than ~512M 
+			MIN_SIZE=$(bytes 540M -b)
+			if [[ $NEW_SIZE -lt $MIN_SIZE ]] ; then
+				echo_red FAT minimum is $(bytes $MIN_SIZE -h)
+				NEW_SIZE=$MIN_SIZE                   
+			fi 
+			
+			NEW_SIZE=" -s $(( $NEW_SIZE / 1024 ))k"
         
             echo_white "Resizing fat filesystem to '$NEW_SIZE'... (line $LINENO)"
             #  run_command "sudo fatresize -p $NEW_SIZE $PARTITION" $LINENO
@@ -2865,16 +2856,12 @@ media_filesystem_resize(){
                 ui_msg_error $LINENO "fatresize failed with rc $rc"
                 return 1
             fi   
-            
-         #   sleep 2
-         #   run_command "sudo fatresize -i $PARTITION | grep -v 'Max size:'" $LINENO
-         #   if (( $? )); then return 1; fi
             ;;
             
         
         exfat)
             ui_msg_error $LINENO RESIZE "Cannot resize exfat filesystems.  Use Windows or DOS."
-            return
+            return 1
             ;;
             
                 
@@ -2882,14 +2869,16 @@ media_filesystem_resize(){
              case $SIZE in
                  min)    
                     NEW_SIZE="$(media_filesystem_min $PARTITION)"
-                    if [[ $NEW_SIZE -lt $(bytes 512m -b) ]]; then
-                        NEW_SIZE=$(bytes 512m -b)
-                    fi
+                #    if [[ $NEW_SIZE -lt $(bytes 512m -b) ]]; then
+                #        NEW_SIZE=$(bytes 512m -b)
+                #    fi
                     NEW_SIZE="-s $(( $NEW_SIZE / 1024 ))k"
                     ;;
                  max)    NEW_SIZE=""  ;;
                  *)      NEW_SIZE="-s $(( $(bytes $SIZE -b) / 1024 ))k"  ;;
              esac
+             
+             
             
             echo_white "Check filesystem is ready for resizing...line ($LINENO)"           
             run_command "sudo ntfsresize -c $PARTITION" $LINENO
@@ -2932,7 +2921,7 @@ media_filesystem_resize(){
             
         hfs+)
             ui_msg_error $LINENO RESIZE "Cannot resize hfs filesystems.  Use Apple."
-            return
+            return 1
             ;;    
             
        *)
