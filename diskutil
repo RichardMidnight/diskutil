@@ -15,7 +15,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.41"  #2022-11-24
+VER="0.1.42"  #2022-11-24
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -25,7 +25,7 @@ SETTINGS="/home/$USER/.config/$SCRIPTNAME/$SCRIPTNAME.conf"
 LOG_FILE="/home/$USER/.config/$SCRIPTNAME/$SCRIPTNAME.log"
 LOG=on
 
-FILESYSTEMS="fat16 fat32 exfat ntfs ext2 ext3 ext4 linux-swap freespace hfs+"
+FILESYSTEMS="fat16 fat32 exfat ntfs ext2 ext3 ext4 linux-swap freespace hfs+ hfs"
 
 WHITE='\033[1;37m'
 RED='\033[1;31m'
@@ -200,10 +200,10 @@ env_install_fs_support(){
             if [[ -z $(env_which mkfs.vfat) ]] || [[ -z $(env_which fatresize) ]]; then
                 if (( $(ui_yesno "Install support for $FS_TYPE" $YESNO) )); then
                     echo Installing vfat support ...
-                    sudo $INSTALL dosfstools
+                    run_command "sudo $INSTALL dosfstools " $LINENO -v
                     
                     echo Installing fat-resize support ...
-                    sudo $INSTALL fatresize
+                    run_command "sudo $INSTALL fatresize " $LINENO -v
                 fi
             fi
             ;;
@@ -213,8 +213,8 @@ env_install_fs_support(){
             if [[ -z $(env_which mkfs.exfat) ]] ; then
                 if (( $(ui_yesno "Install support for $FS_TYPE" $YESNO) )); then
                     echo Installing exfat support ...
-                    sudo $INSTALL exfat-utils 
-                    sudo $INSTALL exfat-fuse 
+                    run_command "sudo $INSTALL exfat-fuse " $LINENO -v
+                    run_command "sudo $INSTALL exfat-utils " $LINENO -v
                     #sudo modprobe fuse 
                     #echo "fuse" | sudo tee -a /etc/modules
                 fi
@@ -226,9 +226,9 @@ env_install_fs_support(){
                 if (( $(ui_yesno "Install support for $FS_TYPE" $YESNO) )); then
                     #sudo apt-get install fuse ntfs-3g
                     echo Installing ntfs support...
-                    sudo $INSTALL fuse 
-                    sudo $INSTALL ntfs-3g 
-                    sudo $INSTALL ntfsprogs  #ntfsprogs is for arch
+                    run_command "sudo $INSTALL fuse " $LINENO -v
+                    run_command "sudo $INSTALL ntfs-3g " $LINENO -v
+                    run_command "sudo $INSTALL ntfsprogs " $LINENO -v  #ntfsprogs is for arch
                     #sudo modprobe fuse 
                     #echo "fuse" | sudo tee -a /etc/modules
                 fi    
@@ -241,16 +241,43 @@ env_install_fs_support(){
         linux-swap|freespace)
             ;;
             
-        hfs+)
-            if [[ -z $(env_which mkfs.hfsplus ) ]] && [[ -z $(env_which hformat ) ]]; then 
+         hfs+|hfsplus)
+    echo_debug  $LINENO    
+            # hfsprogs, hfsplus, hfsutils
+     
+            if [[ -z $(env_which mkfs.hfsplus ) ]]; then 
                 echo Installing hfs+ support...
-                sudo $INSTALL hfsplus 
-                sudo $INSTALL hfsutils    
+                run_command "sudo $INSTALL hfsprogs " $LINENO -v
+            fi    
+    
+            # install /usr/bin  hpmount hpumount hpfsck ...
+            if [[ -z $(env_which hpfsck ) ]]; then 
+                echo Installing hfs+ support...
+                run_command "sudo $INSTALL hfsplus " $LINENO -v
+            fi    
+            ;;
+            
+       hfs)
+            if [[ -z $(env_which mkfs.hfs ) ]]; then 
+                echo Installing hfs+ support...
+                run_command "sudo $INSTALL hfsprogs " $LINENO -v
+            fi    
+    
+            if [[ -z $(env_which hpfsck ) ]]; then 
+                echo Installing hfs+ support...
+                run_command "sudo $INSTALL hfsutils " $LINENO -v
+            fi  
+       ;;     
+      
+           #     [[ -z $(env_which hformat ) ]]
+                
+         #   if  [[ -z $(env_which hpfsck ) ]]; then 
+         #       echo Installing hfsutils...
+         #       run_command "sudo $INSTALL hfsutils " $LINENO  -v
                 #    Or install hfsprogs and hfsutils from the AUR and run
                 #   fsck.hfsplus /dev/sda1 //replace sda1 as appropriate
                 # https://www.kernel.org/doc/html/latest/filesystems/hfsplus.html
-             fi        
-            ;;
+          #   fi        
             
         unformatted)        ;;
                     
@@ -1063,7 +1090,7 @@ media_filesystem_min(){
             fi
             ;;
 
-        hfs+)
+         hfs+|hfsplus|hfs)
             ;;
 
         *)
@@ -1134,7 +1161,7 @@ media_filesystem_size(){
             FS_SIZE=1024
             ;;
             
-        hfs+)
+        hfs+|hfsplus|hfs)
             local BLOCKSIZE=$(sudo mkfs.hfs -N $PARTITION | grep block-size | cut -d: -f2 | tr -d " ")
             local BLOCKS=$(sudo mkfs.hfs -N $PARTITION | grep "total blocks" | cut -d: -f2 | tr -d " ")
             FS_SIZE=$(( $BLOCKS * $BLOCKSIZE ))
@@ -2133,23 +2160,14 @@ media_partition_format(){
             ES=$?
             ;;
             
-        hfs+|hfsplus|hfs)
-            # hformat -l 'HFSX' '/dev/sda3' 
-            #run_command "sudo mkfs.hfsplus -v $FS_NAME $PARTITION" $LINENO $VERBOSE  # -v=volumename
+        hfs+|hfsplus)
+            run_command "sudo mkfs.hfsplus -v $FS_NAME $PARTITION" $LINENO $VERBOSE  # -v=volumename
             #run_command "sudo hformat -l $FS_NAME $PARTITION" $LINENO $VERBOSE
-           # [[ -z $(env_which mkfs.hfsplus ) ]] && [[ -z $(env_which hformat ) ]]
-           
-            # two tools, don't know which you will have
-            if [[ ! -z $(env_which mkfs.hfsplus ) ]]; then
-                run_command "sudo mkfs.hfsplus -v $FS_NAME $PARTITION" $LINENO $VERBOSE  # -v=volumename
-                ES=$?
-            elif [[ ! -z $(env_which hformat ) ]]; then
-                run_command "sudo hformat -l $FS_NAME $PARTITION" $LINENO $VERBOSE
-                ES=$?
-            else
-				ui_msg_error $LINENO "Can't find a '$FS_NAME' formatting tool"
-				return 1
-            fi
+            ;;
+            
+        hfs)
+            run_command "sudo mkfs.hfs -h -v $FS_NAME $PARTITION" $LINENO $VERBOSE  # -v=volumename
+            #run_command "sudo hformat -f -l $FS_NAME $PARTITION" $LINENO $VERBOSE
             ;;
             
         unformatted)  ES=
@@ -2562,8 +2580,9 @@ media_filesystem_check() {
             fi
             ;;
         
-        hfs+)
-            run_command "sudo fsck.hfsplus -f -n $PARTITION"  $LINENO  $VERBOSE
+         hfs+|hfsplus|hfs)
+            run_command "sudo hpfsck $PARTITION"  $LINENO  $VERBOSE
+            if (( $? )); then return 1; fi
             ;;
         
         
@@ -2715,7 +2734,7 @@ media_filesystem_repair() {
             ;;
             
                 
-        hfs+)
+         hfs+|hfsplus|hfs)
             run_command "sudo fsck.hfsplus -f -y $PARTITION"  $LINENO  $VERBOSE
             if (( $? )); then return 1; fi
             ;;    
@@ -2919,7 +2938,7 @@ media_filesystem_resize(){
             ;;       
             
             
-        hfs+)
+         hfs+|hfsplus|hfs)
             ui_msg_error $LINENO RESIZE "Cannot resize hfs filesystems.  Use Apple."
             return 1
             ;;    
@@ -3288,7 +3307,7 @@ media_volume_resize(){
         return 1
     fi
     
-    if [[ $(media_partition_fs_type $PARTITION) = hfs+ ]]; then
+    if [[ $(media_partition_fs_type $PARTITION) = hfs* ]]; then
         ui_msg_error $LINENO RESIZE "Cannot resize hfs filesystems.  Use Apple."
         return 1
     fi
@@ -3934,6 +3953,8 @@ fi
 
 # install filesystem support 
 for FS in $FILESYSTEMS ; do
+#echo_debug $LINENO $FS
+
     env_install_fs_support $FS
 done
 
