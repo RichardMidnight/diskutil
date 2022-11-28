@@ -15,7 +15,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.44"  #2022-11-24
+VER="0.1.45"  #2022-11-28
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -199,10 +199,10 @@ env_install_fs_support(){
         fat16|fat32|vfat)
             if [[ -z $(env_which mkfs.vfat) ]] || [[ -z $(env_which fatresize) ]]; then
                 if (( $(ui_yesno "Install support for $FS_TYPE" $YESNO) )); then
-                    echo Installing vfat support ...
+                    echo_white Installing vfat support ...
                     run_command "sudo $INSTALL dosfstools " $LINENO -v
                     
-                    echo Installing fat-resize support ...
+                    echo_white Installing fat-resize support ...
                     run_command "sudo $INSTALL fatresize " $LINENO -v
                 fi
             fi
@@ -212,7 +212,7 @@ env_install_fs_support(){
             #https://unix.stackexchange.com/questions/61209/create-and-format-exfat-partition-from-linux
             if [[ -z $(env_which mkfs.exfat) ]] ; then
                 if (( $(ui_yesno "Install support for $FS_TYPE" $YESNO) )); then
-                    echo Installing exfat support ...
+                    echo_white Installing exfat support ...
                     run_command "sudo $INSTALL exfat-fuse " $LINENO -v
                     run_command "sudo $INSTALL exfat-utils " $LINENO -v
                     #sudo modprobe fuse 
@@ -225,7 +225,7 @@ env_install_fs_support(){
             if [[ -z $(env_which mkfs.ntfs) ]] ; then
                 if (( $(ui_yesno "Install support for $FS_TYPE" $YESNO) )); then
                     #sudo apt-get install fuse ntfs-3g
-                    echo Installing ntfs support...
+                    echo_white Installing ntfs support...
                     run_command "sudo $INSTALL fuse " $LINENO -v
                     run_command "sudo $INSTALL ntfs-3g " $LINENO -v
                     run_command "sudo $INSTALL ntfsprogs " $LINENO -v  #ntfsprogs is for arch
@@ -242,30 +242,28 @@ env_install_fs_support(){
             ;;
             
          hfs+|hfsplus)
-            # hfsprogs, hfsplus, hfsutils, hfsutils-tcltk
+            # packages: hfsprogs, hfsplus, hfsutils, hfsutils-tcltk
             # to remove all :  sudo apt remove hfsutils hfsutils-tcltk hfsprogs hfsplus -y
+            # tools:  hfs  hfsutils xhfs hfsplus
             
-            if [[ -z $(env_which mkfs.hfsplus ) ]]; then 
-                echo Installing hfs+ support...
-                run_command "sudo $INSTALL hfsprogs " $LINENO -v  # /sbin mkfs.hfsplus, mkfs.hfs
-            fi    
-    
-            if [[ -z $(env_which hpls ) ]]; then 
-                echo Installing hfs+ support...
-                run_command "sudo $INSTALL hfsplus " $LINENO -v   # /usr/bin  hpls, hpmount, hpumount, hpcd, hpcopy, hpfsck, hpmkdir, mppwd,hprm 
+            if [[ -z $(env_which mkfs.hfsplus ) ]]  || [[ -z $(env_which hpls ) ]]; then 
+                if (( $(ui_yesno "Install support for $FS_TYPE" $YESNO) )); then
+                    echo_white Installing hfs+ support...
+                    run_command "sudo $INSTALL hfsprogs " $LINENO -v  # /sbin mkfs.hfsplus, mkfs.hfs
+                    run_command "sudo $INSTALL hfsplus " $LINENO -v   # /usr/bin  hpls, hpmount, hpumount, hpcd, hpcopy, hpfsck, hpmkdir, mppwd,hprm 
+                fi
             fi    
             ;;
             
        hfs)
-            if [[ -z $(env_which mkfs.hfs ) ]]; then 
-                echo Installing hfs support...
-                run_command "sudo $INSTALL hfsprogs " $LINENO -v  # /sbin mkfs.hfsplus, mkfs.hfs
-            fi    
-    
-            if [[ -z $(env_which hls ) ]]; then 
-                echo Installing hfs support...
-                run_command "sudo $INSTALL hfsutils " $LINENO -v    # /usr/bin/ hattrib, hcd, hcopy, hdel, hdir, hformat, hls, hmkdir, hmount, hpwd, hrename, hrmdir, humount, hvol
-                run_command "sudo $INSTALL hfsutils-tcltk " $LINENO -v  # dont know what is in here but it is sometimes recomended
+            if [[ -z $(env_which mkfs.hfs ) ]] || [[ -z $(env_which hls ) ]]; then 
+                if (( $(ui_yesno "Install support for $FS_TYPE" $YESNO) )); then
+                    echo_white Installing hfs support...
+                    run_command "sudo $INSTALL hfsprogs " $LINENO -v  # /sbin mkfs.hfsplus, mkfs.hfs
+                    run_command "sudo $INSTALL hfsutils " $LINENO -v    # /usr/bin/ hattrib, hcd, hcopy, hdel, hdir, hformat, hls, hmkdir, hmount, hpwd, hrename, hrmdir, humount, hvol
+                    # dont know if this is needed...
+                    run_command "sudo $INSTALL hfsutils-tcltk " $LINENO -v  # /usr/bin/hfs
+                fi
             fi  
             ;;     
             
@@ -983,10 +981,7 @@ media_disk_first_available_byte(){
     
     # set BEG
     if [[ $LAST_PART_NUM -gt 0 ]]; then   # there are some partitions present
-#echo_debug  $LINENO LAST_END = $(media_partition_end $LAST_PARTITION -b)
         BEG_UNALIGNED=$(( $(media_partition_end $LAST_PARTITION -b) + 1 ))   # the next byte.
-
-#echo_debug  $LINENO BEG UNALIGNED =$BEG_UNALIGNED       
   
         #align with Block_size
         if [[ $(( $BEG_UNALIGNED % $BLOCK_SIZE )) == 0 ]]; then  
@@ -1433,7 +1428,10 @@ media_disk_repair() {
     
     if [[ -z $1 ]]; then
         echo "Usage: diskutil repairDisk disk [-y] [-v]"
-        return
+        echo "  linux: filesystem check"
+        echo "  win  : check disk"
+        echo "  mac  : repair volume"
+        return 
     fi     
     
     local DISK=$1
@@ -1454,8 +1452,11 @@ media_disk_initialize(){
     
     if [[ -z $1 ]];then
         echo "Usage: diskutil initDisk disk [gpt|msdos] [-y] [-v]"
-        echo "Wipe a disk and write a new partition table"
-        return 1
+        echo "  Wipe a disk and write a new partition table  "
+        echo "  linux: make a disk label"
+        echo "  windows: "
+        echo "  mac: "
+        return 
     fi
 
     local DISK=$(media_device_fullname $1)
@@ -1486,14 +1487,6 @@ media_disk_initialize(){
         return 3
     fi
     
-    
-    # quit if is mounted
-   # if [[ ! -z "$(sudo df | grep ^$DISK)" ]] ; then
-    #    ui_msg_error $LINENO "$DISK is mounted"
-    #    ui_msg_error $LINENO "Try diskutil unmountDisk $DISK"
-    #    sudo df | grep ^$DISK
-    ##    return 1
-    #fi
     
     #echo "Unmounting '$DEVICE'..."
     media_disk_unmount $DEVICE $YESNO $VERBOSE
@@ -1832,10 +1825,9 @@ media_disk_format(){
     
     if [[ -z $1 ]]; then
         echo "Usage: diskutil eraseDisk device [format] [name] [-y] [-v]"
-        echo
-        echo "Format is: fat16 | fat32 | exfat | ntfs | ext2 | ext3 | ext4"
-        echo Example: diskutil eraseDisk ntfs Untitled /dev/disk3
-        echo Example: diskutil eraseDisk exfat NEWDISK /dev/sda
+        echo "  Format is: $FILESYSTEMS"
+        echo "  Example: diskutil eraseDisk ntfs Untitled /dev/disk3"
+        echo "  Example: diskutil eraseDisk exfat NEWDISK /dev/sda"
         return
     fi
 
@@ -1897,8 +1889,6 @@ media_disk_format(){
     echo_green " - Step 1: DONE"
 
 
-#echo_debug $LINENO $SIZE
-
     local LAST_PART=$(media_disk_partcount $DEVICE)
 
     echo_white " - Step 2: Add a partition to '$DEVICE'..."
@@ -1942,6 +1932,8 @@ media_device_wipe(){
     local YESNO
     local VERBOSE
     getargs $*
+    
+echo_debug  $LINENO $TYPE    
 
     media_device_checktarget $PARTITION $TYPE 
     if (( $? )); then
@@ -2005,7 +1997,7 @@ media_device_wipe(){
     echo_white Wiping $PARTITION...
 
     echo Unmounting $PARTITION...
-    media_disk_unmount $PARTITION $YESNO
+    media_volume_unmount $PARTITION $YESNO
   
     
 
@@ -2041,7 +2033,7 @@ media_device_wipe(){
 }
 
 
- media_test_block(){
+ retire_media_test_block(){
         local PARTITION=$1
         local BLOCK=$2
         
@@ -2089,7 +2081,7 @@ media_device_wipe(){
 }
 
 
-media_device_test(){
+retire_media_device_test(){
     # wipes out all data on a drive or partition, overwriting it the pattern specified
     
 #echo_debug $LINENO $1    
@@ -2242,23 +2234,25 @@ media_partition_rename () {
 
 
 media_partition_format(){
+    # formats a partition.  ie: writes a filesystem
+    if [[ -z $1 ]]; then
+        echo "Usage: diskutil eraseVolume volume [format] [name] [-y] [-v]"
+        echo "  Format is: $FILESYSTEMS"
+        echo "  Erases a Volume removing add data.  "
+        echo "  linux  : write a filesystem "
+        echo "  win    : format a partition "
+        echo "  macOS  : erase a Volume " 
+        return 1
+    fi
+    
     local PARTITION=$(media_device_fullname $1)
     local FORMAT=${2:-fat32}
     local FS_NAME=${3:-NEW}
-    
-    
-#echo_debug $LINENO $FORMAT   $2 
     
     local YESNO
     local VERBOSE
     getargs $*
     
-    if [[ -z $1 ]]; then
-        echo "Usage: diskutil eraseVolume volume [format] [name] [-y] [-v]"
-        exit
-    fi
-
-#echo_debug $LINENO VERBOSE=$VERBOSE
     
     media_device_checktarget $PARTITION part
     if (( $? )); then return 1; fi
@@ -2278,10 +2272,14 @@ media_partition_format(){
     #run_command "sudo umount $DEVICE 2> /dev/null"
     media_volume_unmount $PARTITION $YESNO $VERBOSE
     
-    # write zeros to partition?
-    
     
     echo_white " - Formatting the partition to '$FORMAT'..."
+    
+    # write zeros to partition?
+    echo "Zero the first 2K of '$PARTITION'..."
+    run_command "sudo dd if=/dev/zero of=$PARTITION bs=512 count=4K" $LINENO $VERBOSE
+    if (( $? )); then return 1; fi
+    
 
     case $FORMAT in
         fat16)  
@@ -2353,7 +2351,7 @@ media_partition_reformat(){
 
     if [[ -z $1 ]]; then
         echo "Usage: diskutil reformat partition [-y]"
-        echo Example: diskutil reformat /dev/sda1
+        echo "  Example: diskutil reformat /dev/sda1"
         return
     fi
         
@@ -2385,7 +2383,7 @@ media_partition_resize(){
         # resize a partition to min max or size
         
         if [[ -z $1 ]]; then
-            echo Usage: diskutil resizePartition partition [min max size] [-y] [-v]
+            echo "Usage: diskutil resizePartition partition [min max size] [-y] [-v]"
             return 1
         fi
         
@@ -2811,6 +2809,9 @@ media_filesystem_repair() {
     
     if [[ -z $1 ]]; then
         echo "Usage: diskutil repairFilesystem partition [-y] [-v]"
+        echo "  linux: filesystem check"
+        echo "  win  : check disk"
+        echo "  mac  : repair volume"
         return
     fi
      
@@ -2952,7 +2953,7 @@ media_filesystem_rename() {
     
     if [[ -z $1 ]]; then
         echo "Usage: diskutil rename[Filesystem] partition newName"
-        echo "Example: diskutil rename /dev/sda1 NEWDISK"
+        echo "  Example: diskutil rename /dev/sda1 NEWDISK"
         return
     fi
     
@@ -3003,7 +3004,7 @@ media_filesystem_resize(){
     
     if [[ -z $1 ]]; then
         echo "Usage: diskutil resizeFilesystem partition [min max size] [-y] [-v]"
-        echo "Example:  "
+        echo "  Example:  "
         return
     fi
     
@@ -3367,10 +3368,9 @@ media_volume_info(){
 media_volume_badblocks(){
     
     if [[ -z $1 ]]; then
-        echo "Usage: diskutil badBlocks device  [-y] [-v]"
-        echo
-        echo Example: diskutil badBlocks disk3  
-        echo Example: diskutil badBlocks sda1 -y -v
+        echo "Usage: diskutil badBlocks device [-y] [-v] [-n]"
+        echo "  Example: diskutil badBlocks disk3  "
+        echo "  Example: diskutil badBlocks sda1 -y -v"
         return
     fi
     
@@ -3379,15 +3379,17 @@ media_volume_badblocks(){
     
     local YESNO
     local VERBOSE
+    local RW  
     getargs $*
     
     echo_white "Checking $PARTITION for bad blocks..."
+    echo_white "use -n for non-destructive-read-write mode"
     
 #    if (( $(ui_yesno "Install support for $FS_TYPE" $YESNO) )); then
     
     if (( $(ui_yesno "BAD BLOCKS" "Check $PARTITION for bad blocks " $YESNO ) )); then
     
-        run_command "sudo badblocks -s $VERBOSE $PARTITION" $LINENO $VERBOSE
+        run_command "sudo badblocks -s $VERBOSE $RW $PARTITION" $LINENO $VERBOSE  # -s:summary -n:nonDistructiveReadWrite
     
     fi
 }
@@ -3398,10 +3400,9 @@ media_volume_add(){
     
     if [[ -z $1 ]]; then
         echo "Usage: diskutil addVolume disk [size] [format] [name] [-y]"
-        echo
-        echo "  Format is: fat16 | fat32 | exfat | ntfs | ext2 | ext3 | ext4 | linux-swap"
-        echo Example: diskutil addVolume disk3 ntfs 2g Untitled 
-        echo Example: diskutil addVolume sda exfat 3g NEWDISK 
+        echo "  Format is: $FILESYSTEMS"
+        echo "  Example: diskutil addVolume disk3 ntfs 2g Untitled "
+        echo "  Example: diskutil addVolume sda exfat 3g NEWDISK "
         return
     fi
     
@@ -3473,8 +3474,9 @@ media_volume_resize(){
     # resizes a partition and filesystem
     
     if [[ -z $1 ]]; then
-        echo "Usage: disutil resizeVolume volume [min max size] [-y] [-v]"
-        echo "example diskutil resizeVolume sda1 min"
+        echo "Usage: disutil resize volume [min max size] [-y] [-v]"
+        echo "  example diskutil resizeVolume sda1 min"
+        echo "  does not work on exfat or hfs filesystems."
         return
     fi
         
@@ -3503,7 +3505,7 @@ media_volume_resize(){
     fi
     
     if [[ $(media_partition_fs_type $PARTITION) = hfs* ]]; then
-        ui_msg_error $LINENO RESIZE "Cannot resize hfs filesystems.  Use Apple."
+        ui_msg_error $LINENO RESIZE "Cannot resize hfs or hfsplus filesystems.  Use Apple."
         return 1
     fi
     
@@ -3635,10 +3637,11 @@ getargs(){
     for ARG in $ARGS; do
 #echo_debug "$LINENO testing arg '$ARG'"    
         case $ARG in
-            -y|--yes)            YESNO=-y    ;;
-            -v|--verbose)        VERBOSE=-v  ;;
+            -y|--yes)           YESNO=-y    ;;
+            -v|--verbose)       VERBOSE=-v  ;;
      #       -q)                 QUIET=-q    ;;
-            -f|--force)           FORCE=-f    ;;
+            -f|--force)         FORCE=-f    ;;
+            -n)                 RW=-n       ;;    # for badblocks
             
         esac
     done
@@ -3649,7 +3652,10 @@ media_volume_verify(){
     #check partition and filesystem incuding sizes
     
     if [[ -z $1 ]]; then
-        echo "Usage: diskutil verifyVolume volume [-y] [-v]"
+        echo "Usage: diskutil verify volume [-y] [-v]"
+        echo "  linux: filesystem check"
+        echo "  win  : check disk"
+        echo "  mac  : verify volume"
         return 1
     fi
     
@@ -3721,6 +3727,14 @@ media_volume_verify(){
 
 media_volume_repair(){
     local PARTITION=$(media_device_fullname $1)
+
+    if [[ -z $1 ]]; then
+        echo "Usage: diskutil repair volume [-y] [-v]"
+        echo "  linux: filesystem check"
+        echo "  win  : check disk"
+        echo "  mac  : repair volume"
+        return 1
+    fi
 
     local YESNO
     local VERBOSE
@@ -3808,7 +3822,7 @@ media_clone(){
 
 
 
-media_test_pattern(){
+retire_media_test_pattern(){
     local DEVICE=$1
     local PATTERN=$2   # in octal  eg '\377'
     
@@ -3911,7 +3925,7 @@ media_test_pattern(){
 
 
 
-media_testx(){
+retire_media_testx(){
     local DEVICE=$1
   #  local YESNO=${2:-"-n"}
     local NAME=$(lsblk $DEVICE -dnpo VENDOR,MODEL,SIZE)
@@ -4062,13 +4076,18 @@ menu() {
 disk_util_terminology(){
 echo "diskutil terminology:
 
-Device
+Device / block device
 Disk
 Partition
+
+filesystem / format
+
 Volume      A formatted partition
 
-filesystem
-format
+mount
+unmount
+
+
 "
     
 }
@@ -4098,14 +4117,14 @@ Usage:  diskutil [quiet] <verb> <options> [-y] [-v], where <verb> is as follows:
      unmountDisk        (Unmount an entire disk (all volumes))
      eject              (Unmount all volumes and Eject a disk)
 
-     rename     		(Rename a volume)
+     rename             (Rename a volume)
 
-     verify       		(Verify the data structures of a volume)
-     repair       		(Repair the data structures of a volume)
+     verify             (Verify the data structures of a volume)
+     repair             (Repair the data structures of a volume)
      verifyDisk         (Verify the components of a partition map of a disk)
      repairDisk         (Repair the components of a partition map of a disk)
      
-     resize       		(Resize a volume, increasing or decreasing its size)
+     resize             (Resize a volume, increasing or decreasing its size)
 
 
   -- DESTRUCTIVE VERBS ---
@@ -4123,13 +4142,11 @@ Usage:  diskutil [quiet] <verb> <options> [-y] [-v], where <verb> is as follows:
 
   -- HIDDEN VERBS ---
 
-     resizePart
-     resizeFS
-     
-     wipe                 (wipe entire partition with zero|random|shred)
-
-     badBlocks            (check Volume for bad blocks)
-     hexedit              (edit disk or partition)
+     resizePart         (Resizes just the Partition)
+     resizeFS           (Resizes just the Filesystem)
+     wipe               (wipe entire partition with zero|random|shred)
+     badBlocks          (check Partition or Disk for bad blocks)
+     hexedit            (view/edit Partition or Disk)
 
 diskutil <verb> with no options will provide help on that verb
 "
@@ -4187,7 +4204,8 @@ case $CMD in
 
     info*)      
         if [[ -z $2 ]]; then
-            echo "Usage: diskutil info [disk | volume]"
+            echo "Usage: diskutil info [disk | volume] [-v]"
+            lsblk -n -o NAME
             exit
         fi    
       
@@ -4248,10 +4266,9 @@ case $CMD in
     wipePartition)          media_device_wipe "$2" part $3 $4 $5 $6;;
     wipeDisk)               media_device_wipe "$2" disk $3 $4 $5 $6;;     
     
-    badBlocks)              media_volume_badblocks $2 $3 $4;;
+    badBlocks)              media_volume_badblocks $2 $3 $4 $5 ;;
     hexedit)                sudo hexedit $(media_device_fullname $2);;
     
-    testVolume)             media_device_test $2 $3 $4 $5 $6;;
             
     clone)
         SOURCE=$1
