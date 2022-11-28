@@ -15,7 +15,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.45"  #2022-11-28
+VER="0.1.46"  #2022-11-28
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -899,11 +899,7 @@ media_device_checktarget(){
         ui_msg_error $LINENO "Device '$DEVICE' is root device"
         return 3
     fi
-    
-    
 }
-
-
 
 
 # -------------------------------------------------------------------------------
@@ -1053,7 +1049,6 @@ media_filesystem_min(){
 				echo_debug FAT16 minimum is $(bytes $MIN_SIZE -h)
 				FS_MIN=$MIN_SIZE                   
 			fi 
-           
             ;;
      
      
@@ -1076,10 +1071,12 @@ media_filesystem_min(){
 				FS_MIN=$MIN_SIZE                   
 			fi 
             ;;
+            
              
         exfat)
             FS_MIN=$(sudo fsck.exfat  "$PARTITION" | grep Used | sed 's/  */ /g' | cut -d' ' -f3-4 | sed 's/ //g')
-            ;;     
+            ;;    
+             
             
         ntfs)
             #sudo ntfsfix -d $PARTITION
@@ -1090,6 +1087,7 @@ media_filesystem_min(){
                 FS_MIN=$(media_filesystem_size $PARTITION)
             fi
             ;; 
+            
      
         ext2|ext3|ext4)       
             blocksize="$(sudo tune2fs -l "$PARTITION" | grep '^Block size:' | tr -d ' ' | cut -d ':' -f 2)"
@@ -1101,6 +1099,7 @@ media_filesystem_min(){
                 FS_MIN=$(($MIN_SIZE * $blocksize))
             fi
             ;;
+            
 
          hfs+|hfsplus|hfs)
             ;;
