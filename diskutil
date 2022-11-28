@@ -242,46 +242,35 @@ env_install_fs_support(){
             ;;
             
          hfs+|hfsplus)
-    echo_debug  $LINENO    
-            # hfsprogs, hfsplus, hfsutils
-     
+            # hfsprogs, hfsplus, hfsutils, hfsutils-tcltk
+            # to remove all :  sudo apt remove hfsutils hfsutils-tcltk hfsprogs hfsplus -y
+            
             if [[ -z $(env_which mkfs.hfsplus ) ]]; then 
                 echo Installing hfs+ support...
-                run_command "sudo $INSTALL hfsprogs " $LINENO -v
+                run_command "sudo $INSTALL hfsprogs " $LINENO -v  # /sbin mkfs.hfsplus, mkfs.hfs
             fi    
     
-            # install /usr/bin  hpmount hpumount hpfsck ...
-            if [[ -z $(env_which hpfsck ) ]]; then 
+            if [[ -z $(env_which hpls ) ]]; then 
                 echo Installing hfs+ support...
-                run_command "sudo $INSTALL hfsplus " $LINENO -v
+                run_command "sudo $INSTALL hfsplus " $LINENO -v   # /usr/bin  hpls, hpmount, hpumount, hpcd, hpcopy, hpfsck, hpmkdir, mppwd,hprm 
             fi    
             ;;
             
        hfs)
-        # maybe hfsutils-tcltk
             if [[ -z $(env_which mkfs.hfs ) ]]; then 
-                echo Installing hfs+ support...
-                run_command "sudo $INSTALL hfsprogs " $LINENO -v
+                echo Installing hfs support...
+                run_command "sudo $INSTALL hfsprogs " $LINENO -v  # /sbin mkfs.hfsplus, mkfs.hfs
             fi    
     
-            if [[ -z $(env_which hpfsck ) ]]; then 
-                echo Installing hfs+ support...
-                run_command "sudo $INSTALL hfsutils " $LINENO -v
-                run_command "sudo $INSTALL hfsutils-tcltk " $LINENO -v
+            if [[ -z $(env_which hls ) ]]; then 
+                echo Installing hfs support...
+                run_command "sudo $INSTALL hfsutils " $LINENO -v    # /usr/bin/ hattrib, hcd, hcopy, hdel, hdir, hformat, hls, hmkdir, hmount, hpwd, hrename, hrmdir, humount, hvol
+                run_command "sudo $INSTALL hfsutils-tcltk " $LINENO -v  # dont know what is in here but it is sometimes recomended
             fi  
-       ;;     
-      
-           #     [[ -z $(env_which hformat ) ]]
-                
-         #   if  [[ -z $(env_which hpfsck ) ]]; then 
-         #       echo Installing hfsutils...
-         #       run_command "sudo $INSTALL hfsutils " $LINENO  -v
-                #    Or install hfsprogs and hfsutils from the AUR and run
-                #   fsck.hfsplus /dev/sda1 //replace sda1 as appropriate
-                # https://www.kernel.org/doc/html/latest/filesystems/hfsplus.html
-          #   fi        
+            ;;     
             
-        unformatted)        ;;
+        unformatted)        
+            ;;
                     
           
         *)  
@@ -2287,7 +2276,7 @@ media_partition_format(){
     
     #echo "Unmounting 'PARTITION'..."
     #run_command "sudo umount $DEVICE 2> /dev/null"
-    media_volume_unmount $PARTITION $YES $VERBOSE
+    media_volume_unmount $PARTITION $YESNO $VERBOSE
     
     # write zeros to partition?
     
@@ -2751,11 +2740,33 @@ media_filesystem_check() {
             fi
             ;;
         
-         hfs+|hfsplus|hfs)
-            run_command "sudo hpfsck $PARTITION"  $LINENO  $VERBOSE
-            if (( $? )); then return 1; fi
+         hfs+|hfsplus)
+            #run_command "sudo hpfsck $PARTITION"  $LINENO  $VERBOSE
+            run_command "sudo fsck.hfsplus -fn $PARTITION"  $LINENO  $VERBOSE
+            if (( $? )); then 
+                if (( ! $(ui_yesno "VERIFY" "Errors found.  Try to fix" $YESNO) )); then
+                    echo
+                    return 1
+                fi
+                echo_white  "Attempting to repair filesystem..."
+                media_filesystem_repair $PARTITION $YESNO $VERBOSE
+                if (( $? )) ; then return 1; fi
+            fi    
             ;;
-        
+
+        # may not be any difference from hfs+
+        hfs)
+            run_command "sudo fsck.hfs -fn $PARTITION"  $LINENO  $VERBOSE
+            if (( $? )); then 
+                if (( ! $(ui_yesno "VERIFY" "Errors found.  Try to fix" $YESNO) )); then
+                    echo
+                    return 1
+                fi
+                echo_white  "Attempting to repair filesystem..."
+                media_filesystem_repair $PARTITION $YESNO $VERBOSE
+                if (( $? )) ; then return 1; fi
+            fi    
+            ;;
         
         *)
             ui_msg_error $LINENO "Filesystem '$FILESYSTEM' not supported"
@@ -2905,10 +2916,18 @@ media_filesystem_repair() {
             ;;
             
                 
-         hfs+|hfsplus|hfs)
+         hfs+|hfsplus)
+            #run_command "sudo hpfsck $PARTITION"  $LINENO  $VERBOSE
             run_command "sudo fsck.hfsplus -f -y $PARTITION"  $LINENO  $VERBOSE
             if (( $? )); then return 1; fi
-            ;;    
+            ;;
+
+
+         # may not be any difference from hfs+
+         hfs)  
+            run_command "sudo fsck.hfs -f -y $PARTITION"  $LINENO  $VERBOSE
+            if (( $? )); then return 1; fi
+            ;;
             
             
         *)
@@ -2961,7 +2980,9 @@ media_filesystem_rename() {
             exfat)              run_command "sudo exfatlabel $PARTITION '$NAME'" $LINENO $VERBOSE;;
             ntfs)               run_command "sudo ntfslabel $VERBOSE $PARTITION '$NAME'" $LINENO $VERBOSE;;
             ext4)               run_command "sudo e2label $PARTITION '$NAME'" $LINENO $VERBOSE  ;;
-            *)                  echo Unknown filesystem '$FS_TYPE' ;;
+            hfs+|hfsplus)       run_command "sudo hplabel $PARTITION '$NAME'" $LINENO $VERBOSE  ;;   
+            hfs)                run_command "sudo hlabel $PARTITION '$NAME'" $LINENO $VERBOSE  ;;   
+            *)                  echo "Unknown filesystem '$FS_TYPE'" ;;
         esac
     fi
     
