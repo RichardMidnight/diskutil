@@ -15,7 +15,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.42"  #2022-11-24
+VER="0.1.43"  #2022-11-24
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -258,6 +258,7 @@ env_install_fs_support(){
             ;;
             
        hfs)
+        # maybe hfsutils-tcltk
             if [[ -z $(env_which mkfs.hfs ) ]]; then 
                 echo Installing hfs+ support...
                 run_command "sudo $INSTALL hfsprogs " $LINENO -v
@@ -266,6 +267,7 @@ env_install_fs_support(){
             if [[ -z $(env_which hpfsck ) ]]; then 
                 echo Installing hfs+ support...
                 run_command "sudo $INSTALL hfsutils " $LINENO -v
+                run_command "sudo $INSTALL hfsutils-tcltk " $LINENO -v
             fi  
        ;;     
       
@@ -1049,10 +1051,10 @@ media_filesystem_min(){
     local FS_TYPE=$(media_partition_fs_type $PARTITION)
     local FS_MIN
     local blocksize
-    local minsize
+    local MIN_SIZE
     case $FS_TYPE in
      
-        fat16|fat32|vfat)
+        fat16)
            FS_MIN=$(sudo fatresize -i "$PARTITION" | grep Min | cut -d : -f2 | sed 's/ //g')
            if [[ -z $FS_MIN ]]; then  # try a different way..
                local BYTES_CLUSTER=$(sudo fsck.fat -n -v $PARTITION | grep "bytes per cluster" | sed 's/  */ /g' | cut -d" " -f2)
@@ -1060,9 +1062,35 @@ media_filesystem_min(){
                local BYTES_USED=$(( $BYTES_CLUSTER * $CLUSTERS_USED ))
                FS_MIN=$BYTES_USED
            fi
-           if (( $? )); then 
-                ui_msg_error $LINENO "Error running fatresize for '$PARTITION'."
+           
+            #be sure not less than ~38M or maybe 64
+			MIN_SIZE=$(bytes 64M -b)
+			if [[ $FS_MIN -lt $MIN_SIZE ]] ; then
+				echo_debug FAT16 minimum is $(bytes $MIN_SIZE -h)
+				FS_MIN=$MIN_SIZE                   
+			fi 
+           
+            ;;
+     
+     
+        fat32|vfat)
+           FS_MIN=$(sudo fatresize -i "$PARTITION" | grep Min | cut -d : -f2 | sed 's/ //g')
+           if [[ -z $FS_MIN ]]; then  # try a different way..
+               local BYTES_CLUSTER=$(sudo fsck.fat -n -v $PARTITION | grep "bytes per cluster" | sed 's/  */ /g' | cut -d" " -f2)
+               local CLUSTERS_USED=$(sudo fsck.fat -n -v $PARTITION | grep $PARTITION | cut -d, -f2 | cut -d"/" -f1 | tr -d " ")
+               local BYTES_USED=$(( $BYTES_CLUSTER * $CLUSTERS_USED ))
+               FS_MIN=$BYTES_USED
            fi
+       #    if (( $? )); then 
+       #         ui_msg_error $LINENO "Error running fatresize for '$PARTITION'."
+       #    fi
+           
+            #be sure not less than ~512M 
+			MIN_SIZE=$(bytes 540M -b)
+			if [[ $FS_MIN -lt $MIN_SIZE ]] ; then
+				echo_debug FAT32 minimum is $(bytes $MIN_SIZE -h)
+				FS_MIN=$MIN_SIZE                   
+			fi 
             ;;
              
         exfat)
@@ -1081,12 +1109,12 @@ media_filesystem_min(){
      
         ext2|ext3|ext4)       
             blocksize="$(sudo tune2fs -l "$PARTITION" | grep '^Block size:' | tr -d ' ' | cut -d ':' -f 2)"
-            minsize=$(sudo resize2fs -P "$PARTITION" | grep minimum | cut -d: -f2 | sed 's/ //g')
-            if ! (( $minsize )); then
-                minsize=0
+            MIN_SIZE=$(sudo resize2fs -P "$PARTITION" | grep minimum | cut -d: -f2 | sed 's/ //g')
+            if ! (( $MIN_SIZE )); then
+                MIN_SIZE=0
             fi
             if [ $(is_number "$minsize") ] && [ $(is_number "$blocksize") ]; then
-                FS_MIN=$(($minsize * $blocksize))
+                FS_MIN=$(($MIN_SIZE * $blocksize))
             fi
             ;;
 
@@ -2024,6 +2052,149 @@ media_device_wipe(){
 }
 
 
+ media_test_block(){
+        local PARTITION=$1
+        local BLOCK=$2
+        
+        local SKIP=$(( $BLOCK - 1 ))
+        local SAVED=block_saved.img
+        local ZEROS=block_zeros.img
+        BS=$(( 4 * 1024 * 1024 ))
+        
+        #run_command "pv -s $BLOCK_SIZE /dev/$PATTERN | sudo dd iflag=fullblock of=$PARTITION bs=$BLOCK_SIZE_BYTES count=1 " $LINENO
+
+        echo -n Block $BLOCK..
+
+        # save data
+        echo -n save..
+        sudo dd iflag=fullblock if=$PARTITION of=$SAVED bs=$BS skip=$SKIP count=1 status=none
+       # local SV=$(sudo dd iflag=fullblock if=$PARTITION bs=$BS skip=$SKIP count=1 status=none )
+
+
+        # write zeros
+        echo -n write..
+        sudo dd iflag=fullblock if=/dev/zero of=$PARTITION bs=$BS seek=$SKIP count=1 status=none
+
+
+        # read data
+        echo -n read..
+        sudo dd iflag=fullblock if=$PARTITION of=$ZEROS bs=$BS skip=$SKIP count=1 status=none
+        #local ZE=$(sudo dd iflag=fullblock if=$PARTITION bs=$BS skip=$SKIP count=1 status=none)
+        
+
+        #restore data
+        echo -n restore..
+        sudo dd iflag=fullblock if=$SAVED of=$PARTITION bs=$BS seek=$SKIP count=1 status=none
+        #echo $SV | sudo dd iflag=fullblock of=$PARTITION bs=$BS seek=$SKIP count=1 status=none
+       
+       
+        #compare data
+        echo -n compare..
+        if ! cmp -n $BS "$ZEROS" /dev/zero; then
+        #if ! cmp -n $BS /dev/zero; then
+            echo_red error, data is not the same
+        else
+            echo_green OK  
+        fi
+        
+}
+
+
+media_device_test(){
+    # wipes out all data on a drive or partition, overwriting it the pattern specified
+    
+#echo_debug $LINENO $1    
+    if [[ -z $1 ]]; then
+        echo "Usage: diskutil test device [disk|partition] [zero|random|shred] [size|max] [-y]"
+        return
+    fi
+
+    local DISK=$(media_device_name $1)
+    local PARTITION=$(media_device_fullname $1)
+    local TYPE=$2
+    local PATTERN=${3:-zero}   # zero | random | shred
+    local SIZE=${4:-max}
+    local SAVED_DATA
+
+    local YESNO
+    local VERBOSE
+    getargs $*
+
+echo_debug $LINENO $SIZE 
+
+    media_device_checktarget $PARTITION $TYPE 
+    if (( $? )); then return 1; fi
+
+    
+    local TYPE=$(lsblk $PARTITION -dnpo TYPE)
+    local NAME=$(lsblk $DISK -dnpo VENDOR,MODEL,SIZE)
+    
+    case $PATTERN in
+        zero|random|shred)   ;;
+        *)  echo "Line $LINENO Unknown in Pattern '$PATTERN'"
+            return 1
+            ;;
+    esac    
+    
+    # set size
+    if [[ $SIZE = max ]]; then
+        if [[ $TYPE = disk ]]; then
+            SIZE=$(media_device_size $DISK)
+        else
+            SIZE=$(media_partition_size $PARTITION)
+        fi
+    else
+        SIZE=$(bytes $SIZE -b)
+    fi
+
+#echo_debug $LINENO $SIZE    
+#return 1
+    
+    BS=$(( 4 * 1024 * 1024 ))
+    #DEVICE_BLOCK_COUNT=$(( $SIZE / $BS ))
+    BLOCKS=$(( $SIZE / $BS ))
+
+    if [[ $PARTITION = $ROOT ]] ; then
+        ui_msg_error $LINENO "Can not wipe root Volume"
+        return 3
+    fi
+ 
+    
+    if (( ! $(ui_yesno "TEST" "Test $PARTITION with $PATTERN" $YESNO) )); then
+        return 1
+    fi
+ 
+    #Countdown 
+ #   do_beep
+ #   ui_countdown 10 "Wipe" "Wiping Media '$PARTITION' in 10 seconds...\n\n"
+ #   if (( $? )); then return 1; fi
+   
+
+    echo_white Testing $PARTITION...
+
+    echo Unmounting $PARTITION...
+    media_volume_unmount $PARTITION $YESNO
+  
+
+PATTERN=zero
+local BLOCK
+
+echo_white Blocks=$BLOCKS
+
+    for BLOCK in $(seq 1 $BLOCKS ); do
+        media_test_block $PARTITION $BLOCK
+        if (( $? )); then
+            ui_msg_error "Bad block #$BLOCK"
+            return 1
+        fi    
+    
+    done
+
+    echo
+    ui_msg "TEST MEDIA" "'done."   
+    
+}
+
 
 
 #######################################################################
@@ -2859,11 +3030,11 @@ media_filesystem_resize(){
              esac
             
             #be sure not less than ~512M 
-			MIN_SIZE=$(bytes 540M -b)
-			if [[ $NEW_SIZE -lt $MIN_SIZE ]] ; then
-				echo_red FAT minimum is $(bytes $MIN_SIZE -h)
-				NEW_SIZE=$MIN_SIZE                   
-			fi 
+		#	MIN_SIZE=$(bytes 540M -b)
+	#		if [[ $NEW_SIZE -lt $MIN_SIZE ]] ; then
+#				echo_red FAT minimum is $(bytes $MIN_SIZE -h)#
+#				NEW_SIZE=$MIN_SIZE                   
+#			fi 
 			
 			NEW_SIZE=" -s $(( $NEW_SIZE / 1024 ))k"
         
@@ -3005,7 +3176,10 @@ media_volume_unmount(){
 
     local YESNO
     local VERBOSE
+    local FORCE
     getargs $*   
+    
+#echo_debug $LINENO $FORCE    
     
     if [[ -z $1 ]]; then
         echo "Usage: diskutil umount volume"
@@ -3020,7 +3194,7 @@ media_volume_unmount(){
     if [ ! -z "$(sudo df | grep ^$PARTITION)" ]; then
     
         if (( $(ui_yesno "UNMOUNT" "Unmount $PARTITION?" $YESNO) )); then
-            run_command "udisksctl unmount -b $PARTITION" $LINENO $VERBOSE
+            run_command "udisksctl unmount $FORCE -b $PARTITION" $LINENO $VERBOSE
             #udisksctl unmount -b $PARTITION
         fi
         
@@ -3322,11 +3496,17 @@ media_volume_resize(){
     
     case $SIZE in
      #   min)    NEW_SIZE=$(media_filesystem_min $PARTITION)       ;;
-        min)    NEW_SIZE=min       ;;
+        min)    NEW_SIZE=min       
+                NEW_SIZE_H=$(bytes $(media_filesystem_min $PARTITION) -h )
+                ;;
         
-        max)    NEW_SIZE=$(( $(media_partition_max $PARTITION) - $(media_partition_start $PARTITION)  ))    ;;
+        max)    NEW_SIZE=$(( $(media_partition_max $PARTITION) - $(media_partition_start $PARTITION)  )) 
+                NEW_SIZE_H=$(bytes $NEW_SIZE -h)   
+                ;;
         
-        *)      NEW_SIZE=$(bytes $SIZE -b)       ;;
+        *)      NEW_SIZE=$(bytes $SIZE -b)       
+                NEW_SIZE_H=$(bytes $NEW_SIZE -h)
+                ;;
     esac
  
 #echo_debug $LINENO NEW_SIZE=$NEWSIZE    
@@ -3339,7 +3519,7 @@ media_volume_resize(){
 	local FS_TYPE=$(media_partition_fs_type $PARTITION)
     local VOLUME_SIZE=$(bytes $(media_filesystem_size $PARTITION) -h)
 
-    if  (( ! $(ui_yesno "RESIZE" "Resize '$PARTITION' ($FS_TYPE) from '$VOLUME_SIZE' to '$(bytes $NEW_SIZE -h)' ($NEW_SIZE)" $YESNO) )); then
+    if  (( ! $(ui_yesno "RESIZE" "Resize '$PARTITION' ($FS_TYPE) from '$VOLUME_SIZE' to about '$NEW_SIZE_H' ($NEW_SIZE)" $YESNO) )); then
         echo Resize canceled.
         return 0
     fi
@@ -3710,7 +3890,7 @@ media_test_pattern(){
 
 
 
-media_test(){
+media_testx(){
     local DEVICE=$1
   #  local YESNO=${2:-"-n"}
     local NAME=$(lsblk $DEVICE -dnpo VENDOR,MODEL,SIZE)
@@ -3965,6 +4145,7 @@ TARGET=$(media_device_fullname $2)
 #SPECS=$3
 
 
+
 case $CMD in
     -v)
         echo $VER
@@ -4048,6 +4229,8 @@ case $CMD in
     
     badBlocks)              media_volume_badblocks $2 $3 $4;;
     hexedit)                sudo hexedit $(media_device_fullname $2);;
+    
+    testVolume)             media_device_test $2 $3 $4 $5 $6;;
             
     clone)
         SOURCE=$1
