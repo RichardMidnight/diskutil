@@ -15,7 +15,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.43"  #2022-11-24
+VER="0.1.44"  #2022-11-24
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -3635,10 +3635,10 @@ getargs(){
     for ARG in $ARGS; do
 #echo_debug "$LINENO testing arg '$ARG'"    
         case $ARG in
-            -y|-yes)            YESNO=-y    ;;
-            -v|-verbose)        VERBOSE=-v  ;;
+            -y|--yes)            YESNO=-y    ;;
+            -v|--verbose)        VERBOSE=-v  ;;
      #       -q)                 QUIET=-q    ;;
-            -f|force)           FORCE=-f    ;;
+            -f|--force)           FORCE=-f    ;;
             
         esac
     done
@@ -4168,12 +4168,12 @@ TARGET=$(media_device_fullname $2)
 
 
 case $CMD in
-    -v)
+    -v|--version)
         echo $VER
         exit
         ;;
         
-    -h|help)
+    -h|--help)
         disk_utility_help
         exit
         ;;
