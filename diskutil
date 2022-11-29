@@ -15,7 +15,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.47"  #2022-11-28
+VER="0.1.48"  #2022-11-28
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -893,7 +893,7 @@ media_disk_pt_type(){
 
 media_device_checktarget(){
     local DEVICE=$(media_device_fullname $1)
-    local TYPE=$2    # disk or part
+    local TYPE=$2    # disk or part or
 
     
     if [[ -z $DEVICE ]]; then
@@ -909,7 +909,7 @@ media_device_checktarget(){
         fi    
     fi
 
-    if  [[ $(media_device_type $DEVICE) != $TYPE ]]; then
+    if  [[ $(media_device_type $DEVICE) != $TYPE ]] && (( $TYPE )) ; then
         ui_msg_error $LINENO "Device '$DEVICE' is not type '$TYPE'"
         return 1  
     fi        
@@ -919,6 +919,16 @@ media_device_checktarget(){
         ui_msg_error $LINENO "Device '$DEVICE' is root device"
         return 3
     fi
+}
+
+
+media_device_OS(){
+    # returns first found OS
+    
+    local PARTITION=$(media_device_fullname $1)
+    
+    
+    
 }
 
 
@@ -992,7 +1002,7 @@ media_disk_first_available_byte(){
     local ROUND_UP
     
     media_device_checktarget $DISK disk
-    if (( $? )); then return 1; fi
+    if (( $? )); then echo_debug $LINENO ; return 1; fi
     
     
     # set BEG
@@ -1136,8 +1146,8 @@ media_filesystem_min(){
     media_filesystem_name(){
     local PARTITION=$(media_device_fullname $1)
     
-    media_device_checktarget $PARTITION part
-    if (( $? )); then return 1; fi
+  #  media_device_checktarget $PARTITION part
+  #  if (( $? )); then echo_debug $LINENO ; return 1; fi
     
     lsblk -n -o LABEL $PARTITION    
 }
@@ -1151,12 +1161,13 @@ media_filesystem_size(){
     # FS_SIZE=$(lsblk $PARTITION -n -b -o FSSIZE)
     # FS_USED=$(lsblk $PARTITION -n -b -o FSUSED)
     
+    local DISK=$(media_device_name $1)
     local PARTITION=$(media_device_fullname $1)
     local FS_TYPE=$(media_partition_fs_type $1)    
     local FS_SIZE
      
     media_device_checktarget $PARTITION part
-    if (( $? )); then return 1; fi     
+    if (( $? )) && [[ $(media_disk_partcount $DISK) != 0 ]]; then echo_debug $LINENO ; return 1; fi     
      
      case $FS_TYPE in
         fat16|fat32|vfat)
@@ -1387,7 +1398,7 @@ media_disk_info(){
     echo_white Disk and Partition info $DEVICE
     run_command "sudo parted $DEVICE print free" $LINENO -v
     
-    echo_white Filesystem info
+    echo_white "Filesystem info '$DEVICE'"
     run_command "lsblk -f $DEVICE" $LINENO -v
     echo
     
@@ -1416,7 +1427,7 @@ media_disk_verify() {
      
     # checking that $DISK exists
     media_device_checktarget $DISK disk 
-    if (( $? )); then return 1; fi
+    if (( $? )); then echo_debug $LINENO ; return 1; fi
     echo Disk $DISK found.
     
     
@@ -1478,7 +1489,8 @@ media_disk_initialize(){
         return 
     fi
 
-    local DISK=$(media_device_fullname $1)
+    local DISK=$(media_device_name $1)
+    #local DEVICE
     local PT_TYPE=${2:-msdos}   # msdos | gpt
     
     local YESNO
@@ -1499,7 +1511,7 @@ media_disk_initialize(){
     
          
     media_device_checktarget $DISK disk
-    if (( $? )); then exit 1; fi    
+    if (( $? )); then echo_debug $LINENO ; return 1; fi    
     
     if [[ $DISK = $ROOT ]] ; then
         ui_msg_error $LINENO "Can not format root disk"
@@ -1508,7 +1520,7 @@ media_disk_initialize(){
     
     
     #echo "Unmounting '$DEVICE'..."
-    media_disk_unmount $DEVICE $YESNO $VERBOSE
+    media_disk_unmount $DISK $YESNO $VERBOSE
     
     if (( ! $(ui_yesno "ERASE MEDIA" "WARNING!!  Erase all data on '$DISK' " "$YESNO") )); then
         ui_msg "ERASE MEDIA" "~ $DISK not erased. " "" "" log
@@ -1555,7 +1567,7 @@ media_disk_addpartition(){
     
     #check DISK input
     media_device_checktarget $DEVICE disk
-    if (( $? )); then return 1; fi
+    if (( $? )); then echo_debug $LINENO ; return 1; fi
 
 	# check FORMAT input
     if [[ "$FILESYSTEMS" != *"$FORMAT"* ]]; then
@@ -1606,7 +1618,7 @@ media_disk_addpartition(){
 
   
     media_device_checktarget "$DEVICE" disk 
-    if (( $? )); then return 1; fi 
+    if (( $? )); then echo_debug $LINENO ; return 1; fi 
     
     # is this done in checktarget? might not be needed
     # Stop if dev is the root device
@@ -1719,10 +1731,10 @@ media_disk_delpartition(){
     
     #check parameters
     media_device_checktarget $DEVICE disk
-    if (( $? )); then exit 1; fi    
+    if (( $? )); then echo_debug $LINENO ; return 1; fi    
     
     media_device_checktarget $PARTITION part
-    if (( $? )); then exit 1; fi   
+    if (( $? )); then echo_debug $LINENO ; return 1; fi   
     
     
 	local SIZE=$(bytes $(media_partition_size $PARTITION) -h)
@@ -1766,10 +1778,10 @@ media_disk_mount(){
     
     
     media_device_checktarget $DISK disk
-    if (( $? )); then exit 1; fi
+    if (( $? )); then echo_debug $LINENO ; return 1; fi
     
     
-    if (( $(ui_yesno "MOUNT" "Mount all volumes on $DISK" $YESNO) )); then
+   # if (( $(ui_yesno "MOUNT" "Mount all volumes on $DISK" $YESNO) )); then
    
         PARTITION_COUNT=$(media_disk_partcount $DISK)
         
@@ -1780,7 +1792,7 @@ media_disk_mount(){
              fi   
         done
     
-    fi
+  #  fi
 }        
 
     
@@ -1791,17 +1803,17 @@ media_disk_unmount(){
         return
     fi
     
-    DISK=$(media_device_fullname $1)
+    DISK=$(media_device_name $1)
  
     local YESNO
     local VERBOSE
     getargs $*    
     
     
-    media_device_checktarget $DISK disk
-    if (( $? )); then exit 1; fi
+   # media_device_checktarget $DISK disk
+   # if (( $? )); then exit 1; fi
     
-    if (( $(ui_yesno "UNMOUNT" "unmount all volumes on $DISK" $YESNO) )); then
+  #  if (( $(ui_yesno "UNMOUNT" "unmount all volumes on $DISK" $YESNO) )); then
     
         PARTITION_COUNT=$(media_disk_partcount $DISK)
     
@@ -1812,7 +1824,7 @@ media_disk_unmount(){
             fi    
         done    
     
-    fi
+   # fi
     }    
 
 
@@ -1829,7 +1841,7 @@ media_disk_eject(){
     getargs $*      
         
     media_device_checktarget $DISK disk
-    if (( $? )); then return 1; fi
+    if (( $? )); then echo_debug $LINENO ; return 1; fi
     
     if (( $(ui_yesno "EJECT" "Unmount all volumes on '$DISK' and eject it" $YESNO) )); then
         echo "Unmounting and ejecting '$DISK'..."
@@ -1861,7 +1873,7 @@ media_disk_format(){
 
     
     media_device_checktarget "$DEVICE" disk 
-    if (( $? )); then
+    if (( $? )); then echo_debug $LINENO ;
         return 1
     fi 
     
@@ -1930,6 +1942,32 @@ media_disk_format(){
     media_volume_mount $PARTITION $YESNO $VERBOSE
 
 }
+
+
+
+media_device_info (){
+    # returns information about a device.
+    
+    if [[ -z $1 ]]; then
+        echo "Usage: diskutil info [disk | volume] [-v]"
+        echo
+        lsblk -n -o NAME
+        return
+    fi    
+        
+        
+        
+  echo_debug $LINENO  $(media_device_type $1)
+   #     if [[ $(media_device_type $2) = disk ]]; then
+    media_disk_info $1 $2 $3 $4 $5
+    
+    
+    
+    media_filesystem_info $1 $2 $3 $4 $5
+
+    
+}
+
 
 
 
@@ -2123,7 +2161,7 @@ retire_media_device_test(){
 echo_debug $LINENO $SIZE 
 
     media_device_checktarget $PARTITION $TYPE 
-    if (( $? )); then return 1; fi
+    if (( $? )); then echo_debug $LINENO ; return 1; fi
 
     
     local TYPE=$(lsblk $PARTITION -dnpo TYPE)
@@ -2274,7 +2312,7 @@ media_partition_format(){
     
     
     media_device_checktarget $PARTITION part
-    if (( $? )); then return 1; fi
+    if (( $? )); then echo_debug $LINENO ; return 1; fi
     
     local SIZE=$(bytes $(media_partition_size $PARTITION) -h)
     local FS_TYPE=$(media_partition_fs_type $PARTITION)
@@ -2381,7 +2419,7 @@ media_partition_reformat(){
     
 
     media_device_checktarget $PARTITION part
-    if (( $? )); then return 1 ; fi
+    if (( $? )); then echo_debug $LINENO ; return 1 ; fi
     
 
     FS=$(media_partition_fs_type $PARTITION)
@@ -2547,7 +2585,7 @@ media_partition_check(){
     #fi
     
     media_device_checktarget $PARTITION part
-    if (( $? )); then return 1; fi   
+    if (( $? )); then echo_debug $LINENO ; return 1; fi   
     
     echo -n "Verifying '$PARTITION'"
     
@@ -2654,7 +2692,7 @@ media_filesystem_check() {
     getargs $*  
     
     media_device_checktarget $PARTITION part
-    if (( $? )); then return 1; fi
+    if (( $? )); then echo_debug $LINENO ; return 1; fi
 
 
     FS_TYPE=$(media_partition_fs_type $PARTITION)
@@ -2844,7 +2882,7 @@ media_filesystem_repair() {
 
      
     media_device_checktarget $PARTITION part 
-    if (( $? )); then return 1; fi 
+    if (( $? )); then echo_debug $LINENO ; return 1; fi 
     
     
     if ! (( $(ui_yesno "REPAIR" "Repair Volume '$PARTITION'" $YESNO) )); then
@@ -2989,7 +3027,7 @@ media_filesystem_rename() {
     local WAS_MOUNTED=$(media_filesystem_ismounted $PARTITION)
     
     media_device_checktarget $PARTITION part
-    if (( $? )); then return 1; fi
+    if (( $? )); then echo_debug $LINENO ; return 1; fi
     
     media_volume_unmount $PARTITION $YESNO $VERBOSE
     
@@ -3039,7 +3077,7 @@ media_filesystem_resize(){
     
     
     media_device_checktarget $PARTITION part
-    if (( $? )); then return 1; fi
+    if (( $? )); then echo_debug $LINENO ; return 1; fi
     
     local FS_TYPE=$(media_partition_fs_type $PARTITION)    
     
@@ -3189,10 +3227,10 @@ media_volume_mount(){
         return
     fi
     
-    media_device_checktarget $PARTITION part
-    if (( $? )); then
-        exit 1
-    fi
+  #  media_device_checktarget $PARTITION part
+  #  if (( $? )); then echo_debug $LINENO ;
+  #      return 1
+  #  fi
     
     
     if [[ $(media_partition_fs_type $PARTITION) = linux-swap* ]]; then
@@ -3227,10 +3265,11 @@ media_volume_unmount(){
         return
     fi
     
-    media_device_checktarget $PARTITION part
-    if (( $? )); then
-        exit 1
-    fi
+ #   media_device_checktarget $PARTITION part
+ #   if (( $? )); then
+ #       echo_debug $LINENO not a partition
+ ##       return 1
+ #   fi
     
     if [ ! -z "$(sudo df | grep ^$PARTITION)" ]; then
     
@@ -3243,11 +3282,7 @@ media_volume_unmount(){
 }     
 
 
-media_volume_info(){
-    if [[ -z $1 ]]; then
-        echo "Usage: diskutil info[rmation] device"
-        exit
-    fi    
+media_filesystem_info(){
     
     local DEVICE=$(media_device_name $1)
     local PARTITION_NUM=$(media_device_partnum $1)
@@ -3260,8 +3295,11 @@ media_volume_info(){
     local VERBOSE
     getargs $*        
 
-    media_device_checktarget $PARTITION part
-    if (( $? )); then return 1; fi
+ #   media_device_checktarget $PARTITION part
+ #   if (( $? )); then echo_debug $LINENO ; 
+ ##   return 1; 
+ #x=1
+ #   fi
     
     
     # mount the partition YESNOly
@@ -3271,12 +3309,12 @@ media_volume_info(){
    # echo_white Info: $PARTITION
    # echo
 
-    echo_white Disk and Partition info $DEVICE
-    run_command "sudo parted $DEVICE print free" $LINENO -v
+ #   echo_white Disk and Partition info $DEVICE
+ #   run_command "sudo parted $DEVICE print free" $LINENO -v
 
     #echo
-    echo_white Filesystem info $PARTITION
-    run_command "lsblk -f $PARTITION" $LINENO -v
+  #  echo_white "Filesystem info '$PARTITION'"
+  #  run_command "lsblk -f $PARTITION" $LINENO -v
     
 
 
@@ -3284,33 +3322,31 @@ media_volume_info(){
     media_volume_unmount $PARTITION $YESNO $VERBOSE
     
 
-    if [[ $VERBOSE = -v ]]; then
+   # if [[ $VERBOSE = -v ]]; then
     
         # gather partition info...
         echo
-        echo_white "PARTITION DETAILS   ============"
+        echo_white "Partition and Filesystem details  ============"
         echo Gathering partition details...
-        
+       
         local DEVICE_NAME=$(media_device_name $PARTITION)
         local PARTNUM=$(media_device_partnum $PARTITION)
         local DEVICE_SIZE=$(media_device_size $PARTITION)
         local PART_TABLE=$(media_disk_pt_type $PARTITION)
-        
+         
         local PART_START=$(media_partition_start $PARTITION)
         local PART_END=$(media_partition_end $PARTITION)
-        local PART_SIZE=$(media_partition_size $PARTITION)
+        local PART_SIZE=$(media_partition_size $PARTITION)        
         local PART_MAX_END=$(media_partition_max $PARTITION)
+
 
         local FS_TYPE=$(media_partition_fs_type $PARTITION)
         local FS_NAME=$(media_filesystem_name $PARTITION)
+echo_debug $LINENO 
         local FS_SIZE=$(media_filesystem_size $PARTITION)
+echo_debug $LINENO 
         local FS_MIN=$(media_filesystem_min $PARTITION)
-       
-        # new idea ...
-      #  local PART_RECORD=$(media_partition_record $PARTITION)
-      #  local PART_START=$(echo $PART_RECORD | cut -d: -f 2)
-      #  local PART_END=$(echo $PART_RECORD | cut -d: -f 3)
-      #  local PART_SIZE=$(echo $PART_RECORD | cut -d: -f 4)
+echo_debug $LINENO     
         
         if [[ $(( $PART_START % $BLOCK_SIZE )) -eq 0 ]]; then
             local PART_START_ALIGNED=Aligned
@@ -3372,15 +3408,13 @@ media_volume_info(){
             echo "try sudo parted $DEVICE_NAME unit B resizePart $PARTNUM $new_end "
             echo " or sudo parted $DEVICE_NAME resizePart $PARTNUM 100%"
         fi
-    fi
+  #  fi
+    
     
     # remount ?
     if [[ -z $(media_filesystem_ismounted $PARTITION) ]] && [[ ! -z  $WAS_MOUNTED ]] ; then
-   #     echo
-   #     echo "Mounting $PARTITION ..."
         media_volume_mount $PARTITION -y $VERBOSE
     fi
-    
 }
 
 
@@ -3516,7 +3550,7 @@ media_volume_resize(){
     echo_white Resize Volume $PARTITION ...
     
     media_device_checktarget $PARTITION part
-    if (( $? )); then return 1; fi
+    if (( $? )); then echo_debug $LINENO ; return 1; fi
     
     if [[ $(media_partition_fs_type $PARTITION) = exfat ]]; then
         ui_msg_error $LINENO RESIZE "Cannot resize exfat filesystems.  Use Windows."
@@ -3690,7 +3724,7 @@ media_volume_verify(){
     echo_white "Verify volume '$PARTITION' "
  
     media_device_checktarget $PARTITION part
-    if (( $? )); then return 1; fi
+    if (( $? )); then echo_debug $LINENO ; return 1; fi
  
  
     #  Verify Disk ..... 
@@ -3794,7 +3828,7 @@ media_clone(){
 		if (( $RC )); then
 			ui_msg_error $LINENO "parted failed with Exit-code $RC"
             do_beep_down
-			exit 15
+			return 15
 		fi
 		START_OF_FREESPACE=$(tail -1 <<< "$START_OF_FREESPACE" | grep free | cut -d ':' -f 2 | tr -d 'B')
 		if ! (( $START_OF_FREESPACE )); then 
@@ -4116,7 +4150,7 @@ unmount
 
 disk_utility_help(){
 echo "Disk Utility Tool  ver $VER
-Utility to manage local disks and volumes. Based on Apple's diskutil
+Utility to manage local disks and simple volumes. Based on Apple's diskutil
 A Volume refers to a partition plus it's filesystem.
 Most commands DO NOT require an administrator or root user
 WARNING: Most destructive operations are not prompted
@@ -4221,19 +4255,8 @@ case $CMD in
         echo
         ;;        
 
-    info*)      
-        if [[ -z $2 ]]; then
-            echo "Usage: diskutil info [disk | volume] [-v]"
-            lsblk -n -o NAME
-            exit
-        fi    
-  #echo_debug $LINENO    $(media_device_type $2)
-        if [[ $(media_device_type $2) = disk ]]; then
-            media_disk_info $2 $3 $4 $5
-        else
-            media_volume_info $2 $3 $4 $5
-            echo
-        fi
+    info*)          media_device_info $2 $3 $4 $5 
+
         ;;
     
     listFilesystems)        echo "Supported file systems: $FILESYSTEMS "    ;;
