@@ -15,7 +15,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.46"  #2022-11-28
+VER="0.1.47"  #2022-11-28
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -397,11 +397,14 @@ env_which () {
 is_number(){
     local NUM=$1
     
-    # trim NUM
+    # trim spaces from NUM
     NUM=$(echo $NUM | sed 's/ //g')
     
-    case $NUM in
-        ''|*[!0-9]*) 
+  #  case $NUM in
+    #    ''|*[!0-9]*) 
+    
+    case ${NUM#-} in        # added support for neg numbers ?
+    ''|*[!0-9]*) 
             echo false
             return 1
             ;;
@@ -412,6 +415,11 @@ is_number(){
     esac
 }
 
+
+#echo $(is_number 45)
+#echo $(is_number -45)
+#echo $(is_number 4-5)
+#exit
 
 info_validate_num(){
     local VAR=$1
@@ -494,10 +502,12 @@ bytes(){
     local BYTES=$1
     local OUTPUT=${2:-"-h"};  #human or bytes
     
-    local BASE=$(echo $BYTES | tr -cd '[[:digit:]]' )
+  #  local BASE=$(echo $BYTES | tr -cd '[[:digit:]]' )
+   local BASE=$(echo $BYTES | tr -cd '[[0123456789-]]' )
     local SUFFIX=$(echo $BYTES | tr -cd '[[kmgtbKMGTB]]' )
 
     if ! $(is_number $BASE); then
+#echo_debug $LINENO "'$BASE' not a number    "
         return 1
     fi
 
@@ -525,7 +535,8 @@ bytes(){
             
             [ -z "$BYTES" ] && return
             
-            NUM='^[0-9]+$'
+        #    NUM='^[0-9]+$'
+            NUM='^[0-9,-]+$'     # added support for neg numbers??
             if ! [[ "$BYTES" =~ $NUM ]] ; then   # not a number   
                 return 1
             fi
@@ -565,6 +576,13 @@ bytes(){
     fi
 }
 
+
+#echo $(bytes 2m -b)
+#echo $(bytes -2m -b)
+#echo $(bytes unf -b)
+#echo $(bytes -455 -b)
+#echo $(bytes -455 -h)
+#exit
 
 diskutil_update() {
     INTERFACE=${1:-"cli"}
@@ -838,6 +856,8 @@ media_device_size(){
 media_device_type(){
     local DEVICE=$(media_device_fullname $1) 
     lsblk $DEVICE -n -d -o TYPE
+#echo part
+
 }
 
 
@@ -1404,8 +1424,8 @@ media_disk_verify() {
     local PT_TYPE=$(media_disk_pt_type $DISK)  # this is running lsblk
     case $PT_TYPE in
         dos|msdos|gpt)  echo "Disk initialized with '$PT_TYPE' partition table"  ;;
-        "")             ui_msg_error $LINENO "Disk not initialied... (no disk label found)" ;;
-        *)              ui_msg_error $LINENO "Unknown Partition Table Type... '$PT_TYPE'" ;;
+        "")             ui_msg_error $LINENO "Disk not initialied... (no disk label found)" ; return 1;;
+        *)              ui_msg_error $LINENO "Unknown Partition Table Type... '$PT_TYPE'" ; return 1;;
     esac 
     
 
@@ -3331,7 +3351,7 @@ media_volume_info(){
         echo "PARTNUM      = '$(media_device_partnum $PARTITION)'"  
         echo "PARTITION    = '$PARTITION'"  
         
-        echo "Alignment    = $(media_partition_alignment $PARTITION)"
+##        echo "Alignment    = $(media_partition_alignment $PARTITION)"
         
         echo "PART_START   = $(bytes $PART_START -h)      '$PART_START'  ($PART_START_ALIGNED) "   
         echo "PART_END     = $(bytes $PART_END -h)      '$PART_END'  ($PART_END_ALIGNED) "          
@@ -3341,7 +3361,7 @@ media_volume_info(){
         echo
         echo "FS_TYPE      = $FS_TYPE"  
         echo "FS NAME      = $FS_NAME"
-        echo_white "FS_SIZE      = $(bytes $FS_SIZE -h)      '$FS_SIZE'   ($fs_diff b smaller than partition)"   
+        echo_white "FS_SIZE      = $(bytes $FS_SIZE -h)      '$FS_SIZE'   ($fs_diff b smaller than partition) $(bytes $fs_diff -h)"   
         echo "FS_MIN       = $(bytes $FS_MIN -h)      '$FS_MIN' " 
         
         if [[ $fs_diff -lt 0 ]]; then
@@ -4207,7 +4227,7 @@ case $CMD in
             lsblk -n -o NAME
             exit
         fi    
-      
+  #echo_debug $LINENO    $(media_device_type $2)
         if [[ $(media_device_type $2) = disk ]]; then
             media_disk_info $2 $3 $4 $5
         else
