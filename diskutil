@@ -13,9 +13,15 @@
 # modos gpt
 # https://serverfault.com/questions/963178/how-do-i-convert-my-linux-disk-from-mbr-to-gpt-with-uefi
 
+# partitioning tools
+# parted
+# fdisk
+# cfdisk is a menu-driven fdisk
+# partx displays partition info
+
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.48"  #2022-11-28
+VER="0.1.49"  #2022-11-28
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -885,9 +891,13 @@ media_disk_pt_type(){
     #local PARTITION=$(media_device_fullname $1)
     local DISK=$(media_device_name $1)
     
-    #echo $(sudo parted -m $DISK print | grep $DISK | cut -d: -f6)
-
-    lsblk $DISK -n -d -o PTTYPE
+    local PT_TYPE=$(lsblk $DISK -n -d -o PTTYPE)    
+    
+    if [[ -z $PT_TYPE ]]; then
+        PT_TYPE=$(sudo parted -m $DISK print | grep $DISK | cut -d: -f6)
+    fi
+    
+    echo $PT_TYPE
 }
 
 
@@ -901,7 +911,7 @@ media_device_checktarget(){
         return 1
     fi
     
-    if [[ ! -e $DEVICE ]]; then   # seems to timeout too often.  a sleep and redo helps
+    if [[ ! -e $DEVICE ]]; then   # pause and try again
         sleep .5
         if [[ ! -e $DEVICE ]]; then
             ui_msg_error $LINENO "Device '$DEVICE' does not exist"
@@ -1134,6 +1144,8 @@ media_filesystem_min(){
          hfs+|hfsplus|hfs)
             ;;
 
+        '') ;;
+
         *)
             ui_msg_error $LINENO "Filesystem '$FS_TYPE' unknown"
             ;;
@@ -1209,6 +1221,8 @@ media_filesystem_size(){
             FS_SIZE=$(( $BLOCKS * $BLOCKSIZE ))
             ;;
             
+        '') ;;   
+            
         *)
             ui_msg_error $LINENO "Filesystem '$FS_TYPE' not known" 
             ;;
@@ -1267,21 +1281,29 @@ media_partition_record(){
 
 media_partition_start(){
     # returns the partition starting byte
-    local DEVICE=$(media_device_name $1)
+    local DISK=$(media_device_name $1)
     local PARTNUM=$(media_device_partnum $1)   
     local PARTITION=$(media_device_fullname $1) 
 
+    # if no partitions, disk start
+    if [[ $(media_disk_partcount $DISK) == 0 ]]; then
+        #echo $(media_disk_align $DISK $(( 1025 * 1000 )) roundup )  # 1 meg
+        #echo 0  # byte 0  might need to skip 512 or 1m header...
+        sudo parted -ms $DISK unit B print |  grep ^1:  | cut -d ':' -f 2 | tr -d 'B'
+        return
+    fi
+
     # if whole disk
-    if [[ -z $PARTNUM ]] || [[ $PARTNUM -gt $(media_disk_partcount $DEVICE) ]]; then   
-        echo $(media_device_size $DEVICE)
+    if [[ -z $PARTNUM ]] || [[ $PARTNUM -gt $(media_disk_partcount $DISK) ]]; then   
+        echo $(media_device_size $DISK)
         return
     fi
     
     #using fdisk
-    #local START=$(( $(sudo fdisk $DEVICE -l  | sed 's/  */ /g' | grep $PARTITION  | cut -d' ' -f2 ) * $MULTIPLIER ))
+    #local START=$(( $(sudo fdisk $DISK -l  | sed 's/  */ /g' | grep $PARTITION  | cut -d' ' -f2 ) * $MULTIPLIER ))
 
     # using parted
-    local START=$(sudo parted -ms $DEVICE unit B print |  grep ^$PARTNUM:  | cut -d ':' -f 2 | tr -d 'B')
+    local START=$(sudo parted -ms $DISK unit B print |  grep ^$PARTNUM:  | cut -d ':' -f 2 | tr -d 'B')
     
     echo $START
 }
@@ -1289,10 +1311,19 @@ media_partition_start(){
 
 media_partition_end(){
     # returns the partition end byte.  often used to calc start of next partition.
-    local DEVICE=$(media_device_name $1)
+    local DISK=$(media_device_name $1)
     local PARTNUM=$(media_device_partnum $1)   
     local PARTITION=$(media_device_fullname $1) 
     local SECTOR_SIZE=512
+ 
+ 
+    # if no partitions, disk end
+    if [[ $(media_disk_partcount $DISK) == 0 ]]; then 
+        #echo $(( $(media_disk_align $DISK $(media_device_size $DISK) rounddown ) -1 )) # 1 meg
+        sudo parted -ms $DISK unit B print |  grep ^1:  | cut -d ':' -f 3 | tr -d 'B'
+        return
+    fi
+
  
     # if whole disk
     if [[ -z $PARTNUM ]]; then
@@ -1301,22 +1332,29 @@ media_partition_end(){
     fi    
     
     # using parted 
-    local END=$(sudo parted -ms $DEVICE unit B print |  grep ^$PARTNUM:  | cut -d ':' -f 3 | tr -d 'B')
+    local END=$(sudo parted -ms $DISK unit B print |  grep ^$PARTNUM:  | cut -d ':' -f 3 | tr -d 'B')
     
     #using fdisk
    # local END=$(sudo fdisk  $DEVICE -l | sed 's/  */ /g' | grep $PARTITION | cut -d" " -f3)
    # END=$(( $END * $SECTOR_SIZE ))
     
-
     echo $END
 }
 
 
 media_partition_size(){
     # returns size of a partition in bytes
-    local DEVICE=$(media_device_name $1)
+    local DISK=$(media_device_name $1)
     local PARTNUM=$(media_device_partnum $1) 
     local PARTITION=$(media_device_fullname $1) 
+    
+    
+    # if no partitions, disk size
+    if [[ $(media_disk_partcount $DISK) == 0 ]]; then
+        echo $(( $(media_partition_end $DISK) - $(media_partition_start $DISK) )) 
+        return
+    fi
+    
     
     # if whole disk
     if [[ -z $PARTNUM ]]; then
@@ -1325,12 +1363,12 @@ media_partition_size(){
     fi    
     
     # using parted   
-   #local SIZE=$(sudo parted -ms $DEVICE unit B print |  grep ^$PARTNUM: | cut -d: -f4 | tr -d 'B')
+   #local SIZE=$(sudo parted -ms $DISK unit B print |  grep ^$PARTNUM: | cut -d: -f4 | tr -d 'B')
     
 
     #using fdisk
     # might be a poor way to get size due to unknown columns displaying in the fdisk command 
-    local SIZE=$(sudo fdisk  $DEVICE -l --bytes  | grep $PARTITION | tr -d "*" | sed 's/  */ /g' |  cut -d" " -f5)
+    local SIZE=$(sudo fdisk  $DISK -l --bytes  | grep $PARTITION | tr -d "*" | sed 's/  */ /g' |  cut -d" " -f5)
    
     echo $SIZE
 }
@@ -1338,7 +1376,7 @@ media_partition_size(){
 
 media_partition_max(){
     # return the max end point of a partition.  Includes following freespace or end of disk.
-    local DEVICE=$(media_device_name $1)
+    local DISK=$(media_device_name $1)
     local PARTNUM=$(media_device_partnum $1) 
     local PARTITION=$(media_device_fullname $1)
     
@@ -1348,12 +1386,21 @@ media_partition_max(){
     local PART_FREESPACE_END
     local NEW_END
     
-    # return if partition does not exist
-    if [[ -z $(sudo parted -ms $DEVICE unit B print free | grep ^$PARTNUM: ) ]]; then
+    
+    # if no partitions, disk end
+    if [[ $(media_disk_partcount $DISK) == 0 ]]; then 
+        #echo $(( $(media_disk_align $DISK $(media_device_size $DISK) rounddown ) -1 )) # 1 meg
+        echo $(media_partition_end $DISK)
         return
     fi
     
-    PART_FREESPACE_END=$(sudo parted -ms $DEVICE unit B print free | grep $PART_FREESPACE_START | grep free | cut -d: -f3 | tr -d 'B')
+    
+    # return if partition does not exist
+    if [[ -z $(sudo parted -ms $DISK unit B print free | grep ^$PARTNUM: ) ]]; then
+        return
+    fi
+    
+    PART_FREESPACE_END=$(sudo parted -ms $DISK unit B print free | grep $PART_FREESPACE_START | grep free | cut -d: -f3 | tr -d 'B')
     
     if [[ ! -z $PART_FREESPACE_END ]]; then
         NEW_END=$PART_FREESPACE_END
@@ -1434,7 +1481,7 @@ media_disk_verify() {
     #echo -n "Checking Partition Table Type ..."
     local PT_TYPE=$(media_disk_pt_type $DISK)  # this is running lsblk
     case $PT_TYPE in
-        dos|msdos|gpt)  echo "Disk initialized with '$PT_TYPE' partition table"  ;;
+        dos|msdos|gpt|loop)  echo "Disk initialized with '$PT_TYPE' partition table"  ;;
         "")             ui_msg_error $LINENO "Disk not initialied... (no disk label found)" ; return 1;;
         *)              ui_msg_error $LINENO "Unknown Partition Table Type... '$PT_TYPE'" ; return 1;;
     esac 
@@ -1901,8 +1948,8 @@ media_disk_format(){
 
     ui_echo "$PRODUCTNAME $SCRIPTVER Format '$DEVICE' to '$FORMAT'..." white
     
-   
-    if (( ! $(ui_yesno "ERASE" "Erase '$DEVICE'" $YESNO) ));  then
+    local SIZE=$(bytes $(media_device_size $DEVICE) -h)
+    if (( ! $(ui_yesno "ERASE" "Erase $SIZE disk '$DEVICE' as '$FS_TYPE'" $YESNO) ));  then
         echo Erase canceled
         return
     fi
@@ -1923,7 +1970,7 @@ media_disk_format(){
     local LAST_PART=$(media_disk_partcount $DEVICE)
 
     echo_white " - Step 2: Add a partition to '$DEVICE'..."
-    media_disk_addpartition $DEVICE $FORMAT max $NAME -y $VERBOSE
+    media_disk_addpartition $DEVICE max $FORMAT $NAME -y $VERBOSE
     if (( $? )); then return 1; fi
     echo_green " - Step2: DONE"
     
@@ -1951,7 +1998,7 @@ media_device_info (){
     if [[ -z $1 ]]; then
         echo "Usage: diskutil info [disk | volume] [-v]"
         echo
-        lsblk -n -o NAME
+        run_command "lsblk -o name,type,size,fstype,label,vendor,serial" $LINENO -v
         return
     fi    
         
@@ -2593,7 +2640,7 @@ media_partition_check(){
   #  echo_white "Partition Table Type check ..."
     local PT_TYPE=$(media_partition_pt_type $DEVICE)
     case $PT_TYPE in
-        msdos|gpt|dos)   
+        msdos|gpt|dos|loop)   
             echo -n .
             ;;
         *)           
@@ -3301,28 +3348,14 @@ media_filesystem_info(){
  #x=1
  #   fi
     
-    
-    # mount the partition YESNOly
-    #media_volume_mount $TARGET   
-#udisksctl mount -b $PARTITION   2>/dev/null
-    
-   # echo_white Info: $PARTITION
-   # echo
-
- #   echo_white Disk and Partition info $DEVICE
- #   run_command "sudo parted $DEVICE print free" $LINENO -v
-
-    #echo
-  #  echo_white "Filesystem info '$PARTITION'"
-  #  run_command "lsblk -f $PARTITION" $LINENO -v
-    
-
+    # dont run if there are partitions, but we did not specify one
+    if [[ $(media_disk_partcount $DEVICE) != 0 ]] && [[ -z $PARTITION_NUM ]]; then
+        return
+    fi
 
     #echo
     media_volume_unmount $PARTITION $YESNO $VERBOSE
     
-
-   # if [[ $VERBOSE = -v ]]; then
     
         # gather partition info...
         echo
@@ -3330,9 +3363,10 @@ media_filesystem_info(){
         echo Gathering partition details...
        
         local DEVICE_NAME=$(media_device_name $PARTITION)
+      
         local PARTNUM=$(media_device_partnum $PARTITION)
         local DEVICE_SIZE=$(media_device_size $PARTITION)
-        local PART_TABLE=$(media_disk_pt_type $PARTITION)
+        local PART_TABLE=$(media_disk_pt_type $PARTITION)    
          
         local PART_START=$(media_partition_start $PARTITION)
         local PART_END=$(media_partition_end $PARTITION)
@@ -3342,11 +3376,8 @@ media_filesystem_info(){
 
         local FS_TYPE=$(media_partition_fs_type $PARTITION)
         local FS_NAME=$(media_filesystem_name $PARTITION)
-echo_debug $LINENO 
         local FS_SIZE=$(media_filesystem_size $PARTITION)
-echo_debug $LINENO 
-        local FS_MIN=$(media_filesystem_min $PARTITION)
-echo_debug $LINENO     
+        local FS_MIN=$(media_filesystem_min $PARTITION) 
         
         if [[ $(( $PART_START % $BLOCK_SIZE )) -eq 0 ]]; then
             local PART_START_ALIGNED=Aligned
@@ -3359,7 +3390,6 @@ echo_debug $LINENO
         else
             local PART_END_ALIGNED="Not Aligned"
         fi
-
 
         
         if [[ $(is_number $PART_SIZE) = true ]] && [[ $(is_number $PART_END) = true ]] && [[ $(is_number $PART_START) = true ]]; then  
@@ -3748,7 +3778,7 @@ media_volume_verify(){
     echo -n "Checking 'Partition Table Type'..."
     local PT_TYPE=$(media_partition_pt_type $DISK)
     case $PT_TYPE in
-        msdos|gpt|dos)      echo "Partition table $PT_TYPE found"   ;;
+        msdos|gpt|dos|loop)      echo "Partition table $PT_TYPE found"   ;;
         *)                  ui_msg_error $LINENO "Unknown Partition-Table Type'$PT_TYPE'" ;;
     esac 
     
@@ -4150,8 +4180,8 @@ unmount
 
 disk_utility_help(){
 echo "Disk Utility Tool  ver $VER
-Utility to manage local disks and simple volumes. Based on Apple's diskutil
-A Volume refers to a partition plus it's filesystem.
+Utility to manage local disks and physical volumes. Inspired by Apple's diskutil
+A physical volume refers to a drive or partition plus it's filesystem.
 Most commands DO NOT require an administrator or root user
 WARNING: Most destructive operations are not prompted
 
