@@ -21,7 +21,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.49"  #2022-11-28
+VER="0.1.50"  #2022-11-28
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -854,16 +854,13 @@ media_device_size(){
     local DEVICE=$(media_device_name $1)
     #sudo parted -ms "$DEVICE" unit B print | grep $DEVICE | cut -d ':' -f 2 | tr -d 'B'
  
-    local SIZE=$(lsblk $DEVICE -b -n -d -o size )
-    echo $SIZE
+    lsblk $DEVICE -b -n -d -o size 
 }
 
 
 media_device_type(){
     local DEVICE=$(media_device_fullname $1) 
     lsblk $DEVICE -n -d -o TYPE
-#echo part
-
 }
 
 
@@ -946,6 +943,11 @@ media_device_OS(){
 # media_disk low-level functions
 # -------------------------------------------------------------------------------
 
+media_disk_model(){
+    local DISK=$(media_device_name $1)
+    lsblk $DISK -n -d -o vendor,model | sed 's/  / /g'
+}
+
 
 media_disk_blocksize(){
     # returns the blocksize of the disk
@@ -971,12 +973,6 @@ media_disk_align(){
     fi
     
     END_BYTE=$(bytes $END_BYTE -b)
-    
- #   if [[ $(( $END_BYTE % BLOCK_SIZE )) -eq 0 ]]; then
- #       echo_debug $LINENO $END_BYTE is aligned... returning
- #       echo $END_BYTE
- #       return
- #   fi
     
     #check if END is past device size
     if [[ $END_BYTE -gt $(media_device_size $DISK) ]]; then
@@ -1079,8 +1075,7 @@ media_filesystem_min(){
            if [[ -z $FS_MIN ]]; then  # try a different way..
                local BYTES_CLUSTER=$(sudo fsck.fat -n -v $PARTITION | grep "bytes per cluster" | sed 's/  */ /g' | cut -d" " -f2)
                local CLUSTERS_USED=$(sudo fsck.fat -n -v $PARTITION | grep $PARTITION | cut -d, -f2 | cut -d"/" -f1 | tr -d " ")
-               local BYTES_USED=$(( $BYTES_CLUSTER * $CLUSTERS_USED ))
-               FS_MIN=$BYTES_USED
+               local FS_MIN=$(( $BYTES_CLUSTER * $CLUSTERS_USED ))
            fi
            
             #be sure not less than ~38M or maybe 64
@@ -1097,12 +1092,8 @@ media_filesystem_min(){
            if [[ -z $FS_MIN ]]; then  # try a different way..
                local BYTES_CLUSTER=$(sudo fsck.fat -n -v $PARTITION | grep "bytes per cluster" | sed 's/  */ /g' | cut -d" " -f2)
                local CLUSTERS_USED=$(sudo fsck.fat -n -v $PARTITION | grep $PARTITION | cut -d, -f2 | cut -d"/" -f1 | tr -d " ")
-               local BYTES_USED=$(( $BYTES_CLUSTER * $CLUSTERS_USED ))
-               FS_MIN=$BYTES_USED
+               local FS_MIN=$(( $BYTES_CLUSTER * $CLUSTERS_USED ))
            fi
-       #    if (( $? )); then 
-       #         ui_msg_error $LINENO "Error running fatresize for '$PARTITION'."
-       #    fi
            
             #be sure not less than ~512M 
 			MIN_SIZE=$(bytes 540M -b)
@@ -1158,8 +1149,8 @@ media_filesystem_min(){
     media_filesystem_name(){
     local PARTITION=$(media_device_fullname $1)
     
-  #  media_device_checktarget $PARTITION part
-  #  if (( $? )); then echo_debug $LINENO ; return 1; fi
+    media_device_checktarget $PARTITION part
+    if (( $? )); then echo_debug $LINENO not partition ; return 1; fi
     
     lsblk -n -o LABEL $PARTITION    
 }
@@ -1285,16 +1276,13 @@ media_partition_start(){
     local PARTNUM=$(media_device_partnum $1)   
     local PARTITION=$(media_device_fullname $1) 
 
-    # if no partitions, disk start
+    # if no partitions, parted calls it #1
     if [[ $(media_disk_partcount $DISK) == 0 ]]; then
-        #echo $(media_disk_align $DISK $(( 1025 * 1000 )) roundup )  # 1 meg
-        #echo 0  # byte 0  might need to skip 512 or 1m header...
-        sudo parted -ms $DISK unit B print |  grep ^1:  | cut -d ':' -f 2 | tr -d 'B'
-        return
+        PARTNUM=1
     fi
 
     # if whole disk
-    if [[ -z $PARTNUM ]] || [[ $PARTNUM -gt $(media_disk_partcount $DISK) ]]; then   
+    if [[ -z $PARTNUM ]] ; then   
         echo $(media_device_size $DISK)
         return
     fi
@@ -1317,14 +1305,11 @@ media_partition_end(){
     local SECTOR_SIZE=512
  
  
-    # if no partitions, disk end
+    # if no partitions, parted calls it #1
     if [[ $(media_disk_partcount $DISK) == 0 ]]; then 
-        #echo $(( $(media_disk_align $DISK $(media_device_size $DISK) rounddown ) -1 )) # 1 meg
-        sudo parted -ms $DISK unit B print |  grep ^1:  | cut -d ':' -f 3 | tr -d 'B'
-        return
+        PARTNUM=1
     fi
 
- 
     # if whole disk
     if [[ -z $PARTNUM ]]; then
         echo 1
@@ -1348,13 +1333,12 @@ media_partition_size(){
     local PARTNUM=$(media_device_partnum $1) 
     local PARTITION=$(media_device_fullname $1) 
     
-    
-    # if no partitions, disk size
+    # if no partitions, set partnum to 1
     if [[ $(media_disk_partcount $DISK) == 0 ]]; then
-        echo $(( $(media_partition_end $DISK) - $(media_partition_start $DISK) )) 
-        return
+        #echo $(( $(media_partition_end $DISK) - $(media_partition_start $DISK) )) 
+        #return
+        PARTNUM=1
     fi
-    
     
     # if whole disk
     if [[ -z $PARTNUM ]]; then
@@ -1363,12 +1347,12 @@ media_partition_size(){
     fi    
     
     # using parted   
-   #local SIZE=$(sudo parted -ms $DISK unit B print |  grep ^$PARTNUM: | cut -d: -f4 | tr -d 'B')
+   local SIZE=$(sudo parted -ms $DISK unit B print |  grep ^$PARTNUM: | cut -d: -f4 | tr -d 'B')
     
 
     #using fdisk
     # might be a poor way to get size due to unknown columns displaying in the fdisk command 
-    local SIZE=$(sudo fdisk  $DISK -l --bytes  | grep $PARTITION | tr -d "*" | sed 's/  */ /g' |  cut -d" " -f5)
+   # local SIZE=$(sudo fdisk  $DISK -l --bytes  | grep $PARTITION | tr -d "*" | sed 's/  */ /g' |  cut -d" " -f5)
    
     echo $SIZE
 }
@@ -1393,7 +1377,6 @@ media_partition_max(){
         echo $(media_partition_end $DISK)
         return
     fi
-    
     
     # return if partition does not exist
     if [[ -z $(sudo parted -ms $DISK unit B print free | grep ^$PARTNUM: ) ]]; then
@@ -1475,14 +1458,16 @@ media_disk_verify() {
     # checking that $DISK exists
     media_device_checktarget $DISK disk 
     if (( $? )); then echo_debug $LINENO ; return 1; fi
-    echo Disk $DISK found.
+    echo "Disk $DISK found."
     
     
     #echo -n "Checking Partition Table Type ..."
     local PT_TYPE=$(media_disk_pt_type $DISK)  # this is running lsblk
+ #   echo "Initialied with '$PT_TYPE' partition table"
+    
     case $PT_TYPE in
-        dos|msdos|gpt|loop)  echo "Disk initialized with '$PT_TYPE' partition table"  ;;
-        "")             ui_msg_error $LINENO "Disk not initialied... (no disk label found)" ; return 1;;
+        dos|msdos|gpt)  echo "Disk initialized with '$PT_TYPE' partition table"  ;;
+        ""|loop)             echo "Disk not initialied... (no partition table 'disk label' found)" ;;
         *)              ui_msg_error $LINENO "Unknown Partition Table Type... '$PT_TYPE'" ; return 1;;
     esac 
     
@@ -1490,7 +1475,7 @@ media_disk_verify() {
   #  echo -n "Checking Partition Table ..."
   #  echo_green $(media_partition_pt_type $DISK) OK
   #  if (( $? )); then return 1; fi
-    
+    echo
     if [[ $VERBOSE = -v ]]; then
         run_command "sudo parted $DISK print free" $LINENO $VERBOSE
         if (( $? )); then return 1; fi
@@ -1823,21 +1808,25 @@ media_disk_mount(){
     local VERBOSE
     getargs $*    
     
-    
     media_device_checktarget $DISK disk
     if (( $? )); then echo_debug $LINENO ; return 1; fi
     
     
    # if (( $(ui_yesno "MOUNT" "Mount all volumes on $DISK" $YESNO) )); then
    
-        PARTITION_COUNT=$(media_disk_partcount $DISK)
+    PARTITION_COUNT=$(media_disk_partcount $DISK)
         
-        for ((PART=1 ; PART<=$PARTITION_COUNT; PART++)) ; do
-             if [ -z "$(sudo df | grep ^$DISK$PART)" ]; then
-                #run_command "udisksctl mount -b $DISK$PART" $LINENO 2>/dev/null
-                media_volume_mount $DISK$PART -y $VERBOSE
-             fi   
-        done
+    if ! (( $PARTITION_COUNT )); then
+        media_volume_mount $DISK -y $VERBOSE
+        return
+    fi
+        
+    for ((PART=1 ; PART<=$PARTITION_COUNT; PART++)) ; do
+         if [ -z "$(sudo df | grep ^$DISK$PART)" ]; then
+            #run_command "udisksctl mount -b $DISK$PART" $LINENO 2>/dev/null
+            media_volume_mount $DISK$PART -y $VERBOSE
+         fi   
+    done
     
   #  fi
 }        
@@ -1857,19 +1846,25 @@ media_disk_unmount(){
     getargs $*    
     
     
-   # media_device_checktarget $DISK disk
-   # if (( $? )); then exit 1; fi
+    media_device_checktarget $DISK disk
+    if (( $? )); then exit 1; fi
     
   #  if (( $(ui_yesno "UNMOUNT" "unmount all volumes on $DISK" $YESNO) )); then
     
-        PARTITION_COUNT=$(media_disk_partcount $DISK)
+    PARTITION_COUNT=$(media_disk_partcount $DISK)
     
-        for ((PART=1 ; PART<=$PARTITION_COUNT; PART++)) ; do
-            if [ ! -z "$(sudo df | grep ^$DISK$PART)" ]; then
-                #run_command "udisksctl unmount -b $TARGET$PART" $LINENO  2>/dev/null
-                media_volume_unmount $DISK$PART -y $VERBOSE
-            fi    
-        done    
+    if ! (( $PARTITION_COUNT )); then
+        media_volume_unmount $DISK -y $VERBOSE
+        return
+    fi
+    
+
+    for ((PART=1 ; PART<=$PARTITION_COUNT; PART++)) ; do
+        if [ ! -z "$(sudo df | grep ^$DISK$PART)" ]; then
+            #run_command "udisksctl unmount -b $TARGET$PART" $LINENO  2>/dev/null
+            media_volume_unmount $DISK$PART -y $VERBOSE
+        fi    
+    done    
     
    # fi
     }    
@@ -1998,10 +1993,10 @@ media_device_info (){
     if [[ -z $1 ]]; then
         echo "Usage: diskutil info [disk | volume] [-v]"
         echo
-        run_command "lsblk -o name,type,size,fstype,label,vendor,serial" $LINENO -v
+        #run_command "lsblk -o name,type,size,fstype,fssize,fsuse%,label,vendor,model,serial" $LINENO -v
+        run_command "lsblk -f" $LINENO -v
         return
     fi    
-        
         
         
   echo_debug $LINENO  $(media_device_type $1)
@@ -2009,10 +2004,8 @@ media_device_info (){
     media_disk_info $1 $2 $3 $4 $5
     
     
-    
     media_filesystem_info $1 $2 $3 $4 $5
 
-    
 }
 
 
@@ -3407,15 +3400,18 @@ media_filesystem_info(){
             fs_diff=unknown
         fi
      
+    
         
 
-        echo "DEVICE       = $DEVICE_NAME"
-        echo "DEVICE_SIZE  = $(bytes $DEVICE_SIZE -h)      '$DEVICE_SIZE' " 
+        echo "DEVICE NAME  = $DEVICE_NAME"
+        echo "MODEL        = $(media_disk_model $DEVICE)"
+        echo "SIZE         = $(bytes $DEVICE_SIZE -h)      '$DEVICE_SIZE' " 
         echo "Partition tbl= $PART_TABLE"  
         echo
      #   echo "PARTITION    = '$(media_device_fullname $DEVICE)'" 
-        echo "PARTNUM      = '$(media_device_partnum $PARTITION)'"  
-        echo "PARTITION    = '$PARTITION'"  
+        echo "PARTNUM      = $(media_device_partnum $PARTITION)"  
+     #   echo "part type    = $(media_partition_pt_type $PARTITION)"
+        echo "PARTITION    = $PARTITION"  
         
 ##        echo "Alignment    = $(media_partition_alignment $PARTITION)"
         
@@ -3427,7 +3423,7 @@ media_filesystem_info(){
         echo
         echo "FS_TYPE      = $FS_TYPE"  
         echo "FS NAME      = $FS_NAME"
-        echo_white "FS_SIZE      = $(bytes $FS_SIZE -h)      '$FS_SIZE'   ($fs_diff b smaller than partition) $(bytes $fs_diff -h)"   
+        echo_white "FS_SIZE      = $(bytes $FS_SIZE -h)      '$FS_SIZE' ($(bytes $fs_diff -h) smaller than partition '$fs_diff b') "   
         echo "FS_MIN       = $(bytes $FS_MIN -h)      '$FS_MIN' " 
         
         if [[ $fs_diff -lt 0 ]]; then
@@ -4323,6 +4319,8 @@ case $CMD in
     
     verifyFS)               media_filesystem_check $2 $3 $4 ;;
     repairFS)               media_filesystem_repair $2 $3 $4 ;;
+    verifyPart)             media_partition_check $2 $3 $4 ;;
+    
     resizePart)             media_partition_resize $2 $3 $4 $5 $6;;
     resizeFS)               media_filesystem_resize $2 $3 $4 $5 $6;;    
     
