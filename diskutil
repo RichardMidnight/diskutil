@@ -21,7 +21,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.50"  #2022-11-28
+VER="0.1.51"  #2022-11-30
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -32,6 +32,8 @@ LOG_FILE="/home/$USER/.config/$SCRIPTNAME/$SCRIPTNAME.log"
 LOG=on
 
 FILESYSTEMS="fat16 fat32 exfat ntfs ext2 ext3 ext4 linux-swap freespace hfs+ hfs"
+
+REQUIRED_TOOLS="dd pv bc file nano parted "
 
 WHITE='\033[1;37m'
 RED='\033[1;31m'
@@ -117,61 +119,27 @@ env_installer(){
 
 
 env_install_tools() {   
-    TOOL_MISSING=false
-    TOOLS=$(parted )
-    INSTALL=$(env_installer)
+    local TOOL
+    #SILENT=${1:-"-n"}
+    local INSTALL=$(env_installer)  
     
-    for TOOL in $TOOLS ; do
-        #if [ ! $(which $TOOL) ]; then
-        if [ ! -f /usr/bin/$TOOL ]  && [ ! -f /usr/local/bin/$TOOL ] ; then
-            TOOL_MISSING=true
-        fi
-    done
+    for TOOL in $REQUIRED_TOOLS; do
     
-    if [ $TOOL_MISSING = "true" ]; then
-        echo "Installing required tools ($REQUIRED_TOOLS $REQUIRED_TOOLS_SPECIAL_INSTALL)"
-        RESULT=y
-        if [ $RESULT != "y" ]; then
-            echo
-            echo_red   WARNING.  Not all the needed tools are installed.
-            return 1
-        fi
-
-        for TOOL in $REQUIRED_TOOLS ; do
-             if [ ! -f /usr/bin/$TOOL ]; then
-                echo_white Installing $TOOL ...
-                sudo $INSTALL $TOOL
-                EXIT_CODE=$?
-                if [ $EXIT_CODE != 0 ]; then
-                    ui_msg_error $LINENO "$TOOL not installed."
-                fi
-            fi
-        done
+    if [[ -z $(env_which $TOOL) ]] ; then
+        case $TOOL in
         
-        # Special installs ...
-        
-        # Install PiShrink
-        if [ ! -f /usr/local/bin/pishrink.sh ]; then
-            echo_white Installing pishrink...
-            wget https://raw.githubusercontent.com/Drewsif/PiShrink/master/pishrink.sh
-            sudo chmod +x pishrink.sh
-            sudo mv pishrink.sh /usr/local/bin
-            if [ ! -f /usr/local/bin/pishrink.sh ] ; then
-              ui_msg_error $LINENO "pishrink not installed."
-            else
-              ui_msg  pishrink installed.
+        *)
+            #echo_white Installing $TOOL ...
+            ui_echo "Installing $TOOL..." white
+            sudo $INSTALL $TOOL
+            if (( $? )); then
+                ui_msg_warning $LINENO "$TOOL not installed."
             fi
-        fi
-
-        # Install xz
-        if [ ! -f /usr/bin/xz ]; then
-            echo_white Installing xz-utils...
-            sudo $INSTALL xz-utils
-            if [ ! -f /usr/bin/xz ]; then
-               ui_msg_error $LINENO "xz not installed."
-            fi
-        fi
+            ;;
+        esac    
     fi
+    
+    done
 }    
 
 
@@ -505,6 +473,7 @@ retire_info_validate(){
 bytes(){
     # translates from bytes to human readable and vice-verse
     # currently shows 3 significant digits.
+    # modified to allow neg numbers
     local BYTES=$1
     local OUTPUT=${2:-"-h"};  #human or bytes
     
@@ -582,13 +551,6 @@ bytes(){
     fi
 }
 
-
-#echo $(bytes 2m -b)
-#echo $(bytes -2m -b)
-#echo $(bytes unf -b)
-#echo $(bytes -455 -b)
-#echo $(bytes -455 -h)
-#exit
 
 diskutil_update() {
     INTERFACE=${1:-"cli"}
@@ -899,8 +861,11 @@ media_disk_pt_type(){
 
 
 media_device_checktarget(){
+    # confirms that a device exists, is not root, and is of proper type
+    
     local DEVICE=$(media_device_fullname $1)
     local TYPE=$2    # disk or part or
+    local PART_COUNT=$(media_disk_partcount $DEVICE)
 
     
     if [[ -z $DEVICE ]]; then
@@ -915,8 +880,10 @@ media_device_checktarget(){
             return 1
         fi    
     fi
+    
+    
 
-    if  [[ $(media_device_type $DEVICE) != $TYPE ]] && (( $TYPE )) ; then
+    if [[ $(media_device_type $DEVICE) != $TYPE ]] && [[ $TYPE = disk ]] && [[ $PART_COUNT -eq 0 ]] ; then
         ui_msg_error $LINENO "Device '$DEVICE' is not type '$TYPE'"
         return 1  
     fi        
@@ -1425,7 +1392,7 @@ media_disk_info(){
     local VERBOSE
     getargs $*
     
-    echo_white Disk and Partition info $DEVICE
+    echo_white "Disk and Partition info '$DEVICE'"
     run_command "sudo parted $DEVICE print free" $LINENO -v
     
     echo_white "Filesystem info '$DEVICE'"
@@ -1437,7 +1404,7 @@ media_disk_info(){
         run_command "lsblk -t $DEVICE" $LINENO $VERBOSE
     fi
     
-    echo_white "Looking for Operating Systems..."
+    echo_white "Operating Systems on '$DEVICE'..."
     media_disk_os $DEVICE
     
 }
@@ -1452,6 +1419,7 @@ media_disk_verify() {
     fi     
     
     local DISK=$(media_device_fullname $1)
+    local PART_COUNT=$(media_disk_partcount $1)
     
     local YESNO
     local VERBOSE
@@ -1486,6 +1454,15 @@ media_disk_verify() {
     fi
     
     echo "The disk '$DISK' apears to be OK"
+    
+    
+    if (( ! $(ui_yesno "Verify partitions" "verify all $PARTCOUNT partitons on '$DISK' " "$YESNO") )); then
+    
+        media_partition_check $DISK
+    
+    
+    fi
+    
 }
 
 
@@ -1743,7 +1720,6 @@ media_disk_addpartition(){
         #sudo fdisk -l $DEVICE
         sudo parted $DEVICE print free
     fi
-    
 }
 
 
@@ -1831,8 +1807,6 @@ media_disk_mount(){
             media_volume_mount $DISK$PART -y $VERBOSE
          fi   
     done
-    
-  #  fi
 }        
 
     
@@ -1869,8 +1843,6 @@ media_disk_unmount(){
             media_volume_unmount $DISK$PART -y $VERBOSE
         fi    
     done    
-    
-   # fi
     }    
 
 
@@ -1986,7 +1958,6 @@ media_disk_format(){
     sleep 1
     # mount the drive with udisksctl if installed
     media_volume_mount $PARTITION $YESNO $VERBOSE
-
 }
 
 
@@ -2009,7 +1980,6 @@ media_device_info (){
     
     
     media_filesystem_info $1 $2 $3 $4 $5
-
 }
 
 
@@ -2595,6 +2565,11 @@ media_partition_alignment(){
     local DISK=$(media_device_name $1)
     local PARTNUM=$(media_device_partnum $1)
     local ALIGN
+
+    # if no partitions, set partition to 1
+    if ! (( $PARTNUM )); then
+        PARTNUM=1
+    fi
     
     ALIGN=$(sudo parted $DISK align-check opt $PARTNUM | grep not )
     if [[ -z $ALIGN ]]; then
@@ -2618,6 +2593,7 @@ media_partition_check(){
     local DEVICE=$(media_device_name $1)
     local PARTNUM=$(media_device_partnum $1)
     local PARTITION=$(media_device_fullname $1)
+    local PART_COUNT=$(media_disk_partcount $1)
     
     local YESNO
     local VERBOSE
@@ -2677,20 +2653,22 @@ media_partition_check(){
     
     
     # check against the other partitions
-    if [[ $START -lt $(media_partition_end $PARTITION_PREV) ]]; then
-        ui_msg_error $LINENO "Partition start is too small."
-    else
-        echo -n .
+    if (( $PART_COUNT )); then  # skip if no partition on the disk
+        if [[ $START -lt $(media_partition_end $PARTITION_PREV) ]]; then
+            ui_msg_error $LINENO "Partition start is too small. line $LINENO '$START'"
+        else
+            echo -n .
+        fi
+        if [[ $END -gt $(media_partition_start $PARTITION_NEXT) ]]; then
+            ui_msg_error $LINENO "Partition start is too big.  Line $LINENO $END '$(media_partition_start $PARTITION_NEXT)'"
+            echo $END
+            echo $(media_partition_start $PARTITION_NEXT)
+        else
+            echo -n .
+        fi 
     fi
-    if [[ $END -gt $(media_partition_start $PARTITION_NEXT) ]]; then
-        ui_msg_error $LINENO "Partition start is too big.  Line $LINENO $END '$(media_partition_start $PARTITION_NEXT)'"
-        echo $END
-        echo $(media_partition_start $PARTITION_NEXT)
-    else
-        echo -n .
-    fi 
     
-    
+
     # check size
     echo -n $( bytes $SIZE -h)...
     local SIZE_CALC=$(( $END - $START + 1 ))
@@ -2699,7 +2677,7 @@ media_partition_check(){
     #else
     #    echo -n $( bytes $SIZE -h)...
     fi
-    
+     
     
     # check partition's FS value
   #  local FS=$(echo $(media_partition_record $PARTITION) | cut -d: -f5)
@@ -2707,6 +2685,7 @@ media_partition_check(){
     if [[ "$FILESYSTEMS" == *"$FS"* ]]; then
       echo -n "$FS ..."
     fi
+    
     
     #print alignment
     echo -n "Alignment=$(media_partition_alignment $PARTITION) .."
@@ -2766,7 +2745,7 @@ media_filesystem_check() {
                     echo
                     return 1
                 fi
-                media_filesystem_repair $PARTITION $YESNO $VERBOSE
+                media_filesystem_repair $PARTITION -y $VERBOSE
                 if (( $? )) ; then return 1; fi
             fi
             ;;
@@ -2783,7 +2762,7 @@ media_filesystem_check() {
                     return 1
                 fi
                 echo_white  "Attempting to repair filesystem..."
-                media_filesystem_repair $PARTITION $YESNO $VERBOSE
+                media_filesystem_repair $PARTITION -y $VERBOSE
                 if (( $? )) ; then return 1; fi
             fi
             ;;
@@ -2806,7 +2785,7 @@ media_filesystem_check() {
                 fi
                 
                 echo_white  "Attempting to repair filesystem..."
-                media_filesystem_repair $PARTITION $YESNO $VERBOSE
+                media_filesystem_repair $PARTITION -y $VERBOSE
                 if (( $? )) ; then return 1; fi
             fi    
             ;;
@@ -2824,7 +2803,7 @@ media_filesystem_check() {
                 fi
                 
                 echo_white  "Attempting to repair filesystem..."
-                media_filesystem_repair $PARTITION $YESNO $VERBOSE
+                media_filesystem_repair $PARTITION -y $VERBOSE
                 if (( $? )) ; then return 1; fi
             fi         
             ;;
@@ -2848,7 +2827,7 @@ media_filesystem_check() {
                     return 1
                 fi
                 echo_white  "Attempting to repair filesystem..."
-                media_filesystem_repair $PARTITION $YESNO $VERBOSE
+                media_filesystem_repair $PARTITION -y $VERBOSE
                 if (( $? )) ; then return 1; fi
             fi    
             ;;
@@ -2862,7 +2841,7 @@ media_filesystem_check() {
                     return 1
                 fi
                 echo_white  "Attempting to repair filesystem..."
-                media_filesystem_repair $PARTITION $YESNO $VERBOSE
+                media_filesystem_repair $PARTITION -y $VERBOSE
                 if (( $? )) ; then return 1; fi
             fi    
             ;;
@@ -2894,8 +2873,6 @@ media_filesystem_check() {
         echo "Consider running 'diskutil resizePart $PARTITION max -f'"
         return 1
     elif [[ $SIZE_AVAIL -gt o ]]; then  
-#echo_debug $LINENO FS_SIZE=$FS_SIZE  $(bytes $FS_SIZE -h)
-#echo_debug $LINENO PART_SIZE=$PART_SIZE  $(bytes $PART_SIZE -h)
         echo "Filesystem is '$(bytes $SIZE_AVAIL -h)' smaller than the partition."
     fi
     
@@ -3205,7 +3182,7 @@ media_filesystem_resize(){
             run_command "sudo ntfsresize --force --force $NEW_SIZE $PARTITION" $LINENO    #from gparted
             if (( $? )); then return 1; fi
             
-            sleep 1
+            sleep .5
             echo_white "Clear ntfs dirty flag... line ($LINENO)"
             run_command "sudo ntfsfix -d $PARTITION" $LINENO
             if (( $? )); then return 1; fi
@@ -3214,7 +3191,7 @@ media_filesystem_resize(){
             run_command "sudo ntfsresize -i $PARTITION" $LINENO
             if (( $? )); then return 1; fi
             echo
-            sleep 2
+            sleep 1
             ;;
             
             
@@ -3228,7 +3205,7 @@ media_filesystem_resize(){
             echo_white "Resizing $PARTITION to $NEW_SIZE"
             run_command "sudo resize2fs -p $PARTITION $NEW_SIZE" $LINENO    #from gparted
             if (( $? )); then return 1; fi
-            sleep 2
+            sleep 1
             ;;       
             
             
@@ -3274,7 +3251,7 @@ media_partition_os() {
     LOOPBACK="$(sudo losetup -f --show -o "$PARTSTART" "$MEDIA")"
     if (( $? )); then
         echo ...retrying...
-        sleep 2
+        sleep .5
         LOOPBACK="$(sudo losetup -f --show -o "$PARTSTART" "$MEDIA")"
         if (( $? )); then
             return 3
@@ -3286,6 +3263,7 @@ media_partition_os() {
         sudo losetup -d "$LOOPBACK"
         return 4
     fi
+  
   
     # look for linux OS name and architecture
     if [[ -e $MOUNTDIR/etc/os-release ]]; then
@@ -3765,7 +3743,7 @@ echo_debug $LINENO NEW_SIZE=$NEW_SIZE FS_SIZE=$FS_SIZE
         media_filesystem_resize $PARTITION $NEW_SIZE $YESNO $VERBOSE
         if (( $? )); then return 1; fi
         
-        sleep 1
+        sleep .5
         echo
         echo_white " - Resize step 3/4: Shrink PARTITION to fit FILESYSTEM..."   
         media_partition_resize $PARTITION min $YESNO $VERBOSE
@@ -3782,7 +3760,7 @@ echo_debug $LINENO NEW_SIZE=$NEW_SIZE FS_SIZE=$FS_SIZE
         media_partition_resize $PARTITION $NEW_SIZE $YESNO $VERBOSE
         if (( $? )); then return 1; fi
         
-        sleep 1
+        sleep .5
         echo
         echo_white " - Resize step 3/4: Grow FILESYSTEM to fit PARTITION..."
         #media_filesystem_resize_topart $PARTITION
@@ -3796,7 +3774,7 @@ echo_debug $LINENO NEW_SIZE=$NEW_SIZE FS_SIZE=$FS_SIZE
       
       
       
-    sleep 2  
+    sleep 1
     echo  
     echo_white " - Resize step 4/4: Checking filesytem on $PARTITION..."
     media_filesystem_check $PARTITION $YESNO $VERBOSE
@@ -4358,11 +4336,11 @@ if [[  $1 = -u ]]; then
     exit
 fi
 
+#install required tools
+env_install_tools
 
 # install filesystem support 
 for FS in $FILESYSTEMS ; do
-#echo_debug $LINENO $FS
-
     env_install_fs_support $FS
 done
 
