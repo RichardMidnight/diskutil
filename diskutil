@@ -1436,6 +1436,10 @@ media_disk_info(){
         echo_white Disk topology
         run_command "lsblk -t $DEVICE" $LINENO $VERBOSE
     fi
+    
+    echo_white "Looking for Operating Systems..."
+    media_disk_os $DEVICE
+    
 }
 
 
@@ -3244,8 +3248,115 @@ media_filesystem_resize(){
 }
 
 
+media_partition_os() {
+    # returns name of os found on partition
+	local MEDIA=$1
+	local PARTITION=$2
+	
+	local PARTED_OUTPUT=
+	local PARTSTART=
+	local LOOPBACK=
+	local MOUNTDIR=
+	
+	local OS=
+	local ARCH=
+	local BITS=
+	local READONLY=
+	local OVERLAY=
+  
+    PARTED_OUTPUT=$(sudo parted -ms "$MEDIA" unit B print)
+    if (( $? )); then
+      return 1
+    fi	
 
+    # mount the filesystem
+    PARTSTART="$(echo "$PARTED_OUTPUT" | grep ^$PARTITION: | cut -d ':' -f 2 | tr -d 'B')"
+    LOOPBACK="$(sudo losetup -f --show -o "$PARTSTART" "$MEDIA")"
+    if (( $? )); then
+        echo ...retrying...
+        sleep 2
+        LOOPBACK="$(sudo losetup -f --show -o "$PARTSTART" "$MEDIA")"
+        if (( $? )); then
+            return 3
+        fi  
+    fi
+    MOUNTDIR=$(mktemp -d)
+    sudo mount "$LOOPBACK" "$MOUNTDIR"
+    if (( $? )); then
+        sudo losetup -d "$LOOPBACK"
+        return 4
+    fi
+  
+    # look for linux OS name and architecture
+    if [[ -e $MOUNTDIR/etc/os-release ]]; then
+        OS="$(cat $MOUNTDIR/etc/os-release | grep PRETTY_NAME | cut -d= -f2)"
+        ARCH="$(file $MOUNTDIR/bin/bash | cut -d, -f2)"
+        BITS="$(file $MOUNTDIR/bin/bash | cut -d, -f1)"
+        if  [[ !  -z $(echo "$BITS" | grep 32 ) ]]; then
+            BITS=32
+        elif [[ !  -z $(echo "$BITS" | grep 64 ) ]]; then
+            BITS=64
+        fi
+        if [[ ! $ARCH =~  $BITS ]]; then
+            ARCH=$ARCH"-"$BITS
+        fi  
+        OS="$OS $ARCH" 
+    fi
+    
+    
+    
+    # look for windows
+    if [[ -e $MOUNTDIR/Windows ]]; then
+        OS="'Windows'"
+    fi
+    if [[ -e $MOUNTDIR/setup.exe ]]; then
+        OS=maybe_windows_install
+    fi
+    if [[ -e $MOUNTDIR/sources/winsetup.dll ]]; then
+        OS=maybe_windows_install
+    fi    
+    
+    
+    
+	# look for read-only partition (may not be needed)
+	if [[ -e $MOUNTDIR/etc/fstab ]]; then
+        ROOTREADONLY="$(cat $MOUNTDIR/etc/fstab | grep /boot | grep ,ro )"
+        if [[ ! -z $ROOTREADONLY ]]; then
+            ROOTREADONLY="(READONLY)"
+        fi
+    fi
 
+	# look for overlay file system
+    if [[ -e $MOUNTDIR/cmdline.txt ]]; then
+        OVERLAY="$(cat $MOUNTDIR/cmdline.txt | grep boot=overlay )"
+    	if [[ ! -z $OVERLAY ]]; then
+            OVERLAY="(OVERLAY file system)"
+    	fi
+    fi	
+
+	# unmount fs and cleanup
+	sudo umount "$MOUNTDIR"	
+	sudo losetup -d "$LOOPBACK"
+
+	echo "$OS$OVERLAY$ROOTREADONLY"
+}
+
+media_disk_os() {
+    local DISK=$(media_device_name $1)
+    local MSG=
+
+    PARTED_OUTPUT=$(sudo parted -ms $DISK print)  # no freespace
+    MEDIA_PARTITIONS=$(echo "$PARTED_OUTPUT" | grep ^[1-9]: | grep -v ":::;" | cut -d: -f1)
+
+    echo Looking for operating systems on $DISK partitions...
+    for PARTITION in $MEDIA_PARTITIONS; do
+        OS=$(media_partition_os $DISK $PARTITION)
+        ES=$?
+        if [[ $ES = 0 ]] && [[ ! -z $OS ]] ; then
+            echo " - '$OS' found on $DISK $PARTITION"
+        fi
+    done
+}
 
 ########################################################################
 # volume high level functions 
@@ -4339,6 +4450,7 @@ case $CMD in
     badBlocks)              media_volume_badblocks $2 $3 $4 $5 ;;
     hexedit)                sudo hexedit $(media_device_fullname $2);;
     
+    os)                     media_disk_os    $2 $3 ;;
             
     clone)
         SOURCE=$1
