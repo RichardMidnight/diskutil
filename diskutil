@@ -21,7 +21,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.51"  #2022-11-30
+VER="0.1.53"  #2022-11-30
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -145,7 +145,7 @@ env_install_tools() {
 
 env_install_smarttools(){
     # https://www.addictivetips.com/ubuntu-linux-tips/check-hard-drive-health-on-linux/
-    
+    # smartctl
 #Ubuntu
 sudo apt install smartmontools
 #Debian
@@ -323,8 +323,8 @@ get_ver_to_int() {
 
 
 env_root_device() {
-    local ROOT_PARTITION
-    local ROOT_DRIVE
+    #local ROOT_PARTITION
+    #local ROOT_DRIVE
     
     # new simpler way
     #ROOT_PARTITION=$(findmnt -no source /)
@@ -880,8 +880,6 @@ media_device_checktarget(){
             return 1
         fi    
     fi
-    
-    
 
     if [[ $(media_device_type $DEVICE) != $TYPE ]] && [[ $TYPE = disk ]] && [[ $PART_COUNT -eq 0 ]] ; then
         ui_msg_error $LINENO "Device '$DEVICE' is not type '$TYPE'"
@@ -912,9 +910,13 @@ media_device_OS(){
 
 media_disk_model(){
     local DISK=$(media_device_name $1)
-    lsblk $DISK -n -d -o vendor,model | sed 's/  / /g'
+    lsblk $DISK -n -d -o vendor,model | sed 's/  */ /g'
 }
 
+media_disk_serial(){
+    local DISK=$(media_device_name $1)
+    lsblk $DISK -n -d -o vendor,model,serial | sed 's/  */ /g'
+}
 
 media_disk_blocksize(){
     # returns the blocksize of the disk
@@ -1376,6 +1378,34 @@ media_partition_max(){
 ########################################################################
 3_1_disk_highlevel_functions(){
     xx=1
+}
+
+
+media_disk_test () {
+    # test an entire disk
+    
+    
+    local DISK=$(media_device_name $2)
+    
+    media_device_checktarget $DISK disk
+    if (( $? )); then
+        ui_msg_error $LINENO Trouble with disk
+    else    
+        echo_debug $LINENO Disk $DISK can be seen
+    fi
+    
+    echo DISK: $(media_disk_serial $DISK) $(bytes $(media_device_size $DISK) -h) $DISK
+    if (( $? )); then return 1; fi
+    
+    local PARTCOUNT=$(media_disk_partcount $DISK)
+    echo PARTITIONS: $PARTCOUNT
+    if (( $? )); then return 1; fi
+    
+    if [[ $PARTCOUNT -gt 0 ]]; then
+       # media_partition_check $DISK1
+       x=1
+    fi
+    
 }
 
 media_disk_info(){
@@ -2048,7 +2078,7 @@ echo_debug  $LINENO $TYPE
         return 3
     fi
 
-    if [[ $TYPE = disk ]] && [[ $DISK = $(media_device_name $PARTITION) ]]; then
+    if [[ $TYPE = disk ]] && [[ $DISK = $env_root_device ]]; then
         ui_msg_error $LINENO "Can not wipe root Disk"
         return 3
     fi
@@ -3555,9 +3585,17 @@ media_volume_badblocks(){
     
 #    if (( $(ui_yesno "Install support for $FS_TYPE" $YESNO) )); then
     
+    echo "Serial = $(media_disk_serial $PARTITION)"
+	echo "on $PARTITION"
+	echo "size= $(bytes $(media_device_size $PARTITION) -h) "
+    
     if (( $(ui_yesno "BAD BLOCKS" "Check $PARTITION for bad blocks " $YESNO ) )); then
     
-        run_command "sudo badblocks -s $VERBOSE $RW $PARTITION" $LINENO $VERBOSE  # -s:summary -n:nonDistructiveReadWrite
+
+    
+		media_volume_unmount $PARTITION $YESNO $VERBOSE
+    
+        run_command "sudo badblocks -s $VERBOSE $RW $PARTITION" $LINENO -y  # -s:summary -n:nonDistructiveReadWrite
     
     fi
 }
@@ -4438,6 +4476,8 @@ case $CMD in
     
         
     test)           media_test $TARGET ;;
+    
+    testDisk)       media_disk_test $* ;;
         
     settings)       nano $SETTINGS ;;
     
