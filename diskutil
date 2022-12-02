@@ -21,7 +21,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.54"  #2022-11-30
+VER="0.1.55"  #2022-11-30
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -475,13 +475,16 @@ retire_info_validate(){
 bytes(){
     # translates from bytes to human readable and vice-verse
     # currently shows 3 significant digits.
-    # modified to allow neg numbers
+    # modified to allow neg numbers  NOT
     local BYTES=$1
     local OUTPUT=${2:-"-h"};  #human or bytes
     
   #  local BASE=$(echo $BYTES | tr -cd '[[:digit:]]' )
-   local BASE=$(echo $BYTES | tr -cd '[[0123456789-]]' )
+   local BASE=$(echo $BYTES | tr -cd '[[0123456789]]' )
     local SUFFIX=$(echo $BYTES | tr -cd '[[kmgtbKMGTB]]' )
+
+#echo_debug $LINENO $BASE $SUFFIX
+
 
     if ! $(is_number $BASE); then
 #echo_debug $LINENO "'$BASE' not a number    "
@@ -541,7 +544,7 @@ bytes(){
         fi    
 
     else  # translate to bytes
-    
+#    echo_debug $LINENO $1 $SUFFIX
         case $SUFFIX in
             b|B|"")         echo $BASE            ;;
             k|K|kb|KB)      echo $(($BASE*1024))   ;;
@@ -552,6 +555,10 @@ bytes(){
         esac
     fi
 }
+
+#echo $(bytes 2gb -b)
+#echo $(bytes 2GB -b)
+#exit
 
 
 diskutil_update() {
@@ -1155,7 +1162,10 @@ media_filesystem_size(){
             
             
         exfat)
-            FS_SIZE=$(sudo fsck.exfat  "$PARTITION" | grep Volume | sed 's/  */ /g' | cut -d' ' -f3-4 | sed 's/ //g')
+#echo_debug $LINENO    
+#echo_debug $LINENO      $(sudo fsck.exfat  $PARTITION | grep Volume )
+            FS_SIZE=$(sudo fsck.exfat  $PARTITION | grep Volume | sed 's/  */ /g' | cut -d' ' -f3-4 | tr -d ' ')
+#echo_debug $LIINENO $FS_SIZE     $(bytes $FS_SIZE -b)       
             ;;     
             
             
@@ -1453,8 +1463,8 @@ media_disk_info(){
         run_command "lsblk -t $DEVICE" $LINENO $VERBOSE
     fi
     
-    echo_white "Operating Systems on '$DEVICE'..."
-    media_disk_os $DEVICE
+ #   echo_white "Operating Systems on '$DEVICE'..."
+ #   media_disk_os $DEVICE
     
 }
 
@@ -2891,7 +2901,7 @@ media_filesystem_check() {
 
         # may not be any difference from hfs+
         hfs)
-            run_command "sudo fsck.hfs -fn $PARTITION"  $LINENO  $VERBOSE
+            run_command "sudo fsck.hfs -f -n $PARTITION"  $LINENO  $VERBOSE
             if (( $? )); then 
                 if (( ! $(ui_yesno "VERIFY" "Errors found.  Try to fix" $YESNO) )); then
                     echo
@@ -2915,6 +2925,7 @@ media_filesystem_check() {
     # now check filesystem endpoints vs partition
     local FS_SIZE=$(media_filesystem_size $PARTITION)
     local PART_SIZE=$(media_partition_size $PARTITION)
+#echo_debug $LINENO part=$PARTITION f=$FS_SIZE p=$PART_SIZE    
     local SIZE_AVAIL=$(( $PART_SIZE - $FS_SIZE ))
     
     if [ $WAS_MOUNTED ]; then
@@ -4431,6 +4442,11 @@ CMD=$1
 TARGET=$(media_device_fullname $2)
 #SPECS=$3
 
+
+#PARTITION=/dev/sdb3
+#FS_SIZE=$(media_filesystem_size $PARTITION)
+#echo $FS_SIZE
+#exit
 
 
 case $CMD in
