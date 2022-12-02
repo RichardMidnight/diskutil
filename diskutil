@@ -21,7 +21,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.53"  #2022-11-30
+VER="0.1.54"  #2022-11-30
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -216,6 +216,8 @@ env_install_fs_support(){
             ;;
             
          hfs+|hfsplus)
+			# https://packages.debian.org/sid/arm64/hfsprogs/download
+			# maybe add deb http://ftp.de.debian.org/debian sid main non-free to /etc/apt/sources.list
             # packages: hfsprogs, hfsplus, hfsutils, hfsutils-tcltk
             # to remove all :  sudo apt remove hfsutils hfsutils-tcltk hfsprogs hfsplus -y
             # tools:  hfs  hfsutils xhfs hfsplus
@@ -1384,6 +1386,10 @@ media_partition_max(){
 media_disk_test () {
     # test an entire disk
     
+    local YESNO
+    local VERBOSE
+    getargs $*
+    
     
     local DISK=$(media_device_name $2)
     
@@ -1394,17 +1400,30 @@ media_disk_test () {
         echo_debug $LINENO Disk $DISK can be seen
     fi
     
-    echo DISK: $(media_disk_serial $DISK) $(bytes $(media_device_size $DISK) -h) $DISK
+    local SERIAL=$(media_disk_serial $DISK)
+    local SIZE=$(bytes $(media_device_size $DISK) -h)
+    
+    
+    echo "DISK: $DISK '$SERIAL' $SIZE"
     if (( $? )); then return 1; fi
     
+    local PT_TYPE=$(media_disk_pt_type $DISK)
     local PARTCOUNT=$(media_disk_partcount $DISK)
-    echo PARTITIONS: $PARTCOUNT
+    echo "PARTITION TABLE: '$PT_TYPE' PARTITIONS: '$PARTCOUNT'"
     if (( $? )); then return 1; fi
+    
+    local PART
+    media_disk_unmount $DISK $YESNO $VERBOSE
     
     if [[ $PARTCOUNT -gt 0 ]]; then
-       # media_partition_check $DISK1
-       x=1
+       for ((PART=1 ; PART<=$PARTCOUNT; PART++)) ; do
+			echo
+			sleep 1
+			media_filesystem_check $DISK$PART $YESNO $VERBOSE
+       done
     fi
+    
+    
     
 }
 
@@ -2347,6 +2366,8 @@ media_partition_format(){
     fi
     
     local PARTITION=$(media_device_fullname $1)
+    local PART_NUM=$(media_device_partnum $1)
+    local DISK=$(media_device_name $1)
     local FORMAT=${2:-fat32}
     local FS_NAME=${3:-NEW}
     
@@ -2357,6 +2378,10 @@ media_partition_format(){
     
     media_device_checktarget $PARTITION part
     if (( $? )); then echo_debug $LINENO ; return 1; fi
+    
+   if [[ $FS_NAME = NEW ]] ; then
+	echo $(media_disk_model $DISK)_$PART_NUM | sed 's/ /_/g'
+    fi
     
     local SIZE=$(bytes $(media_partition_size $PARTITION) -h)
     local FS_TYPE=$(media_partition_fs_type $PARTITION)
@@ -2425,7 +2450,7 @@ media_partition_format(){
             ;;
             
         hfs)
-            run_command "sudo mkfs.hfs -h -v $FS_NAME $PARTITION" $LINENO $VERBOSE  # -v=volumename
+            run_command "sudo mkfs.hfs -h -v '$FS_NAME' $PARTITION" $LINENO $VERBOSE  # -v=volumename
             #run_command "sudo hformat -f -l $FS_NAME $PARTITION" $LINENO $VERBOSE
             ;;
             
@@ -2507,9 +2532,9 @@ media_partition_resize(){
         FS_TYPE=$(media_partition_fs_type $PARTITION)
         if [[ $FS_TYPE = fat32 ]] || [[ $FS_TYPE = fat16 ]]; then
             echo_white fat16 and fat32 partitions resize automatically.  Use -f to force it.
-            if [[ $FORCE != -f ]]; then
-              return
-            fi
+         #   if [[ $FORCE != -f ]]; then
+         #     return
+         #   fi
         fi
 
 
@@ -2543,11 +2568,11 @@ media_partition_resize(){
             END=$(( $(media_partition_start $PARTITION) + $(bytes $SIZE -b) ))
             
             # align  END
-            if [[ $(( $(($END + 1 )) % $BLOCK_SIZE )) -ne 0 ]] ; then   # if 0 then it is aligned
+         ##   if [[ $(( $(($END + 1 )) % $BLOCK_SIZE )) -ne 0 ]] ; then   # if 0 then it is aligned
               #  END=$(( $END + $BLOCK_SIZE ))  # add another block
-                END=$(( $END / $BLOCK_SIZE * BLOCK_SIZE ))  # trunkcate to next block
-                END=$(( $END - 1 ))
-            fi   
+         ##       END=$(( $END / $BLOCK_SIZE * BLOCK_SIZE ))  # trunkcate to next block
+         ##       END=$(( $END - 1 ))
+         ##   fi   
             ;;
         esac
         
@@ -2762,6 +2787,7 @@ media_filesystem_check() {
         return 1
     fi
 
+	sleep .5
     
     case $FS_TYPE in
     
@@ -2800,10 +2826,11 @@ media_filesystem_check() {
             
         ntfs)
             #echo " - Checking filesystem..."
+           # sleep .5
             run_command "sudo ntfsfix -n $PARTITION" $LINENO  $VERBOSE  # fsck for ntfs.  limited.  -n no-op
             rc=$?
             
-            sleep 2
+            sleep .5
             run_command "sudo ntfsresize -i -f -n $VERBOSE $PARTITION" $LINENO  $VERBOSE  # -n no-op
             rc2=$?           
             
@@ -2882,7 +2909,7 @@ media_filesystem_check() {
             return 1
             ;;
     esac
-    echo
+    #echo
     
     sleep .5
     # now check filesystem endpoints vs partition
@@ -2958,12 +2985,15 @@ media_filesystem_repair() {
     local FS_TYPE=$(media_partition_fs_type $PARTITION)
     echo_white "Repairing '$FS_TYPE' file system on $PARTITION ... "
     
+    sleep .5
+    
     case $FS_TYPE in
     
         fat16|fat32|vfat) 
             run_command "sudo fsck.fat -a -w $VERBOSE $PARTITION" $LINENO $VERBOSE # from gparted
             rc=$?
             if (( $rc )); then
+				sleep .5
                 ui_msg_error $LINENO "Failed with rc $rc.. may have fixed it.  Running again ..."
                 run_command "sudo fsck.fat -a -w $VERBOSE $PARTITION" $LINENO $VERBOSE # from gparted
                 rc2=$?
@@ -3089,6 +3119,7 @@ media_filesystem_rename() {
             exfat)              run_command "sudo exfatlabel $PARTITION '$NAME'" $LINENO $VERBOSE;;
             ntfs)               run_command "sudo ntfslabel $VERBOSE $PARTITION '$NAME'" $LINENO $VERBOSE;;
             ext4)               run_command "sudo e2label $PARTITION '$NAME'" $LINENO $VERBOSE  ;;
+           # hrename, but I do not understand the syntax
             hfs+|hfsplus)       run_command "sudo hplabel $PARTITION '$NAME'" $LINENO $VERBOSE  ;;   
             hfs)                run_command "sudo hlabel $PARTITION '$NAME'" $LINENO $VERBOSE  ;;   
             *)                  echo "Unknown filesystem '$FS_TYPE'" ;;
@@ -3119,6 +3150,7 @@ media_filesystem_resize(){
     local PARTITION=$(media_device_fullname $1)
     local SIZE=${2:-max}  # min max bytes
     local DISK=$(media_device_name $1)
+    local PARTNUM=$(media_device_partnum $1)
     local NEW_SIZE
     local STARTING_SIZE=$(media_filesystem_size $PARTITION)
     
@@ -3140,6 +3172,7 @@ media_filesystem_resize(){
    
     echo
     echo_white "Resize '$FS_TYPE' filesystem to '$SIZE' "
+	sleep .5
 
     case $FS_TYPE in
     
@@ -3147,7 +3180,8 @@ media_filesystem_resize(){
             # You can't resize FAT32 partition lesser than 512Mb ??
             
             # test that fatresize works.
-            TEST_SIZE=$(sudo fatresize -i $PARTITION | grep Size: | cut -d: -f2)
+            #TEST_SIZE=$(sudo fatresize -i $PARTITION | grep Size: | cut -d: -f2)
+            TEST_SIZE=$(sudo fatresize -i $PARTITION | grep "Cur size" | cut -d: -f2)
             if [[ $(is_number $TEST_SIZE) = false ]]; then
 				ui_msg_error $LINENO "RESIZE" "fatresize does not work on this system. This may be limited to arm-64."
 				return 1
@@ -3155,8 +3189,9 @@ media_filesystem_resize(){
             
              case $SIZE in
 				min)    NEW_SIZE=$(media_filesystem_min $PARTITION )           ;;
-                max)	NEW_SIZE=$(( $(media_partition_max $PARTITION) - $(media_partition_start $PARTITION) ))     ;;
-                 *) 	NEW_SIZE=$SIZE          ;;
+					# can't use fatresize 'max' function. it is the device max.
+				max)	NEW_SIZE=$(( $(media_partition_max $PARTITION) - $(media_partition_start $PARTITION) - $(( 1024 * 1024)) ))     ;;
+                 *) 	NEW_SIZE=$(bytes $SIZE -b)         ;;
              esac
             
             #be sure not less than ~512M 
@@ -3166,11 +3201,17 @@ media_filesystem_resize(){
 #				NEW_SIZE=$MIN_SIZE                   
 #			fi 
 			
-			NEW_SIZE=" -s $(( $NEW_SIZE / 1024 ))k"
+			NEW_SIZE=" -s $(( $NEW_SIZE / 1024 / 1024))M"
         
             echo_white "Resizing fat filesystem to '$NEW_SIZE'... (line $LINENO)"
             #  run_command "sudo fatresize -p $NEW_SIZE $PARTITION" $LINENO
-            run_command "sudo fatresize -p $VERBOSE $NEW_SIZE $PARTITION" $LINENO
+            run_command "sudo fatresize -p -f $VERBOSE $NEW_SIZE $PARTITION" $LINENO -v
+            # can be interactive... so don't use run_command
+            #X="sudo fatresize -p -f $VERBOSE $NEW_SIZE $PARTITION"
+            #echo_blue $X
+            #sudo fatresize -p -f $VERBOSE $NEW_SIZE $PARTITION
+            #"$X"
+			#eval $X
             rc=$?
             if (( $rc )); then
                 ui_msg_error $LINENO "fatresize failed with rc $rc"
@@ -3240,7 +3281,7 @@ media_filesystem_resize(){
             
             
          hfs+|hfsplus|hfs)
-            ui_msg_error $LINENO RESIZE "Cannot resize hfs filesystems.  Use Apple."
+            ui_msg_error $LINENO RESIZE "Cannot resize hfs filesystems.  Use MAC OS."
             return 1
             ;;    
             
@@ -3711,7 +3752,7 @@ media_volume_resize(){
     fi
     
     if [[ $(media_partition_fs_type $PARTITION) = hfs* ]]; then
-        ui_msg_error $LINENO RESIZE "Cannot resize hfs or hfsplus filesystems.  Use Apple."
+        ui_msg_error $LINENO RESIZE "Cannot resize hfs or hfsplus filesystems.  Use MAC OS."
         return 1
     fi
     
@@ -3784,7 +3825,10 @@ echo_debug $LINENO NEW_SIZE=$NEW_SIZE FS_SIZE=$FS_SIZE
         sleep .5
         echo
         echo_white " - Resize step 3/4: Shrink PARTITION to fit FILESYSTEM..."   
-        media_partition_resize $PARTITION min $YESNO $VERBOSE
+        case $(media_partition_fs_type $PARTITION) in
+			fat16|fat32|vfat) ;;
+			*) 			media_partition_resize $PARTITION min $YESNO $VERBOSE  ;;
+		esac	
         if (( $? )); then return 1; fi
     fi
     
@@ -3958,7 +4002,6 @@ media_volume_repair(){
     
     # repair the filesystem
     media_filesystem_repair $PARTITION $YESNO $VERBOSE
-    
     if (( $? )); then return 1; fi
 }
 
