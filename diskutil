@@ -21,7 +21,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.55"  #2022-11-30
+VER="0.1.56"  #2022-11-30
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -68,15 +68,13 @@ run_command(){
     local VERBOSE
     getargs $*
     
-    if [[ $VERBOSE = -v ]]; then
-        echo -n "$PRODUCTNAME: running: "
-        ui_echo "$CMD" blue       
-    else
-        echo -n "$PRODUCTNAME: running: "
-        ui_echo "$CMD" blue     
+    if [[ $VERBOSE != -v ]]; then
+        #DUMP=" > /dev/stderr"
         DUMP=" 1> /dev/null"
-    fi    
-
+    fi
+        
+    echo -n "$PRODUCTNAME: running: "
+    ui_echo "$CMD" blue 
     eval $CMD $DUMP
     EC=$?
     if (( $EC )); then
@@ -1048,35 +1046,25 @@ media_filesystem_min(){
     local MIN_SIZE
     case $FS_TYPE in
      
-        fat16)
-           FS_MIN=$(sudo fatresize -i "$PARTITION" | grep Min | cut -d : -f2 | sed 's/ //g')
-           if [[ -z $FS_MIN ]]; then  # try a different way..
-               local BYTES_CLUSTER=$(sudo fsck.fat -n -v $PARTITION | grep "bytes per cluster" | sed 's/  */ /g' | cut -d" " -f2)
-               local CLUSTERS_USED=$(sudo fsck.fat -n -v $PARTITION | grep $PARTITION | cut -d, -f2 | cut -d"/" -f1 | tr -d " ")
-               local FS_MIN=$(( $BYTES_CLUSTER * $CLUSTERS_USED ))
-           fi
-           
+        fat16|fat32|vfat)
+            # fatresize does NOT work! it returns disk or partition size  
+            # FS_MIN=$(sudo fatresize -i "$PARTITION" | grep Min | cut -d : -f2 | sed 's/ //g')
+             
+            FS_MIN=$(media_filesystem_used $PARTITION) 
+            
+            if [[ $(is_number $FS_MIN) = false ]]; then
+                echo_debug line $LINENO Error: media_filesystem_used did not return a number
+                exit 
+            fi
+                     
             #be sure not less than ~38M or maybe 64
-			MIN_SIZE=$(bytes 64M -b)
+			case $FS_TYPE in
+                fat16|vfat) MIN_SIZE=$(bytes 64M -b)  ;;
+                fat32)      MIN_SIZE=$(bytes 540M -b)  ;;
+            esac
+            
 			if [[ $FS_MIN -lt $MIN_SIZE ]] ; then
-				echo_debug FAT16 minimum is $(bytes $MIN_SIZE -h)
-				FS_MIN=$MIN_SIZE                   
-			fi 
-            ;;
-     
-     
-        fat32|vfat)
-           FS_MIN=$(sudo fatresize -i "$PARTITION" | grep Min | cut -d : -f2 | sed 's/ //g')
-           if [[ -z $FS_MIN ]]; then  # try a different way..
-               local BYTES_CLUSTER=$(sudo fsck.fat -n -v $PARTITION | grep "bytes per cluster" | sed 's/  */ /g' | cut -d" " -f2)
-               local CLUSTERS_USED=$(sudo fsck.fat -n -v $PARTITION | grep $PARTITION | cut -d, -f2 | cut -d"/" -f1 | tr -d " ")
-               local FS_MIN=$(( $BYTES_CLUSTER * $CLUSTERS_USED ))
-           fi
-           
-            #be sure not less than ~512M 
-			MIN_SIZE=$(bytes 540M -b)
-			if [[ $FS_MIN -lt $MIN_SIZE ]] ; then
-				echo_debug FAT32 minimum is $(bytes $MIN_SIZE -h)
+				echo_debug $LINENO $FS_TYPE minimum is $(bytes $MIN_SIZE -h)
 				FS_MIN=$MIN_SIZE                   
 			fi 
             ;;
@@ -1098,14 +1086,15 @@ media_filesystem_min(){
             ;; 
             
      
-        ext2|ext3|ext4)       
-            blocksize="$(sudo tune2fs -l "$PARTITION" | grep '^Block size:' | tr -d ' ' | cut -d ':' -f 2)"
+        ext2|ext3|ext4)   
+            #resize2fs returns size in blocks
+            local BLOCKSIZE=$(sudo tune2fs -l "$PARTITION" | grep '^Block size:' | tr -d ' ' | cut -d ':' -f 2)
             MIN_SIZE=$(sudo resize2fs -P "$PARTITION" | grep minimum | cut -d: -f2 | sed 's/ //g')
             if ! (( $MIN_SIZE )); then
                 MIN_SIZE=0
             fi
-            if [ $(is_number "$minsize") ] && [ $(is_number "$blocksize") ]; then
-                FS_MIN=$(($MIN_SIZE * $blocksize))
+            if [ $(is_number "$MIN_SIZE") ] && [ $(is_number "$BLOCKSIZE") ]; then
+                FS_MIN=$(($MIN_SIZE * $BLOCKSIZE))
             fi
             ;;
             
@@ -1152,11 +1141,10 @@ media_filesystem_size(){
      
      case $FS_TYPE in
         fat16|fat32|vfat)
+            # fatresize is useless.  Min and Max are DISK size.  Size is partition size.
             #FS_SIZE=$(sudo fatresize -i "$PARTITION" | grep "Cur size" | cut -d: -f2 | sed 's/ //g')
-            #if [[ -z $FS_SIZE ]]; then
-            #    FS_SIZE=$(sudo fatresize -i "$PARTITION" | grep "Size:" | cut -d: -f2 | sed 's/ //g')
-            #fi
-            
+            #FS_SIZE=$(sudo fatresize -i "$PARTITION" | grep "Size:" | cut -d: -f2 | sed 's/ //g')
+
             FS_SIZE=$(sudo fsck.fat -n -v $PARTITION | grep "data clusters" | cut -d\( -f2 | cut -d" " -f1)
             ;;
             
@@ -1202,6 +1190,21 @@ media_filesystem_size(){
     echo $(bytes $FS_SIZE -b)
 }
 
+
+  
+media_filesystem_used(){
+    local PARTITION=$(media_device_fullname $1)
+   
+    local FS_USED
+    
+    #  fatresize does NOT work!   FS_MIN=$(sudo fatresize -i "$PARTITION" | grep Min | cut -d : -f2 | sed 's/ //g')
+    # can use fsck as below:
+     local BYTES_CLUSTER=$(sudo fsck.fat -n -v $PARTITION | grep "bytes per cluster" | sed 's/  */ /g' | cut -d" " -f2)
+     local CLUSTERS_USED=$(sudo fsck.fat -n -v $PARTITION | grep $PARTITION | cut -d, -f2 | cut -d"/" -f1 | tr -d " ")
+     FS_USED=$(( $BYTES_CLUSTER * $CLUSTERS_USED ))
+    
+    echo $FS_USED
+}
 
 
     
@@ -1406,13 +1409,16 @@ media_disk_test () {
     media_device_checktarget $DISK disk
     if (( $? )); then
         ui_msg_error $LINENO Trouble with disk
-    else    
-        echo_debug $LINENO Disk $DISK can be seen
+  #  else    
+  #      echo_debug $LINENO Disk $DISK can be seen
     fi
     
     local SERIAL=$(media_disk_serial $DISK)
     local SIZE=$(bytes $(media_device_size $DISK) -h)
     
+    if (( ! $(ui_yesno "Test Disk" "Unmount and verify all $PARTCOUNT partitons on '$DISK' " "$YESNO") )); then
+        return 
+    fi
     
     echo "DISK: $DISK '$SERIAL' $SIZE"
     if (( $? )); then return 1; fi
@@ -1423,17 +1429,15 @@ media_disk_test () {
     if (( $? )); then return 1; fi
     
     local PART
-    media_disk_unmount $DISK $YESNO $VERBOSE
+    media_disk_unmount $DISK -y $VERBOSE
     
     if [[ $PARTCOUNT -gt 0 ]]; then
        for ((PART=1 ; PART<=$PARTCOUNT; PART++)) ; do
 			echo
-			sleep 1
+			sleep .5
 			media_filesystem_check $DISK$PART $YESNO $VERBOSE
        done
     fi
-    
-    
     
 }
 
@@ -1763,7 +1767,7 @@ media_disk_addpartition(){
     run_command "sudo parted  -a optimal $DEVICE mkpart $PART_TYPE $FS_TYPE $BEG $END" $LINENO
     if (( $? )); then return 1; fi    
 
-    sleep 1
+    sleep .5
     
     # this should be improved to find the actual partition number
     # Check that the partition was added
@@ -1886,16 +1890,19 @@ media_disk_unmount(){
     media_device_checktarget $DISK disk
     if (( $? )); then exit 1; fi
     
-  #  if (( $(ui_yesno "UNMOUNT" "unmount all volumes on $DISK" $YESNO) )); then
+    if (( $(ui_yesno "UNMOUNT" "unmount all volumes on $DISK" $YESNO) )); then
+        YESNO=-y
+    fi
     
     PARTITION_COUNT=$(media_disk_partcount $DISK)
     
+    # if no partitions...
     if ! (( $PARTITION_COUNT )); then
         media_volume_unmount $DISK -y $VERBOSE
         return
     fi
-    
 
+    # for each partition, unmount
     for ((PART=1 ; PART<=$PARTITION_COUNT; PART++)) ; do
         if [ ! -z "$(sudo df | grep ^$DISK$PART)" ]; then
             #run_command "udisksctl unmount -b $TARGET$PART" $LINENO  2>/dev/null
@@ -2014,7 +2021,7 @@ media_disk_format(){
     media_partition_format $PARTITION $FORMAT $NAME -y $VERBOSE
     echo_green " - Step3: DONE"
   
-    sleep 1
+    sleep .5
     # mount the drive with udisksctl if installed
     media_volume_mount $PARTITION $YESNO $VERBOSE
 }
@@ -2787,10 +2794,9 @@ media_filesystem_check() {
     echo_white "Verifying FileSystem on '$PARTITION' ($FS_TYPE)...   "  
 
     # unmount
-    if [[ $(media_filesystem_ismounted $PARTITION) ]] && (( $(ui_yesno "Unmount" "Unmount and remount $PARTITION" $YESNO) )); then
-        WAS_MOUNTED=true
-        media_volume_unmount $PARTITION -y
-    fi
+    WAS_MOUNTED=$(media_filesystem_ismounted)
+    media_volume_unmount $PARTITION -y
+
     
     if [[ $(media_filesystem_ismounted $PARTITION) = true ]]; then
         echo Volume $PARTITION is mounted.  Cannot verify it.
@@ -2836,7 +2842,6 @@ media_filesystem_check() {
             
         ntfs)
             #echo " - Checking filesystem..."
-           # sleep .5
             run_command "sudo ntfsfix -n $PARTITION" $LINENO  $VERBOSE  # fsck for ntfs.  limited.  -n no-op
             rc=$?
             
@@ -2919,16 +2924,14 @@ media_filesystem_check() {
             return 1
             ;;
     esac
-    #echo
     
     sleep .5
     # now check filesystem endpoints vs partition
     local FS_SIZE=$(media_filesystem_size $PARTITION)
-    local PART_SIZE=$(media_partition_size $PARTITION)
-#echo_debug $LINENO part=$PARTITION f=$FS_SIZE p=$PART_SIZE    
+    local PART_SIZE=$(media_partition_size $PARTITION)    
     local SIZE_AVAIL=$(( $PART_SIZE - $FS_SIZE ))
     
-    if [ $WAS_MOUNTED ]; then
+    if (( $WAS_MOUNTED )); then
         media_volume_mount $PARTITION -y
     fi   
     
@@ -2940,11 +2943,11 @@ media_filesystem_check() {
         echo_red You need to fix this.
         echo "Consider running 'diskutil resizePart $PARTITION max -f'"
         return 1
-    elif [[ $SIZE_AVAIL -gt o ]]; then  
+    elif [[ $SIZE_AVAIL -gt $(( 1024 * 1024)) ]]; then  
         echo "Filesystem is '$(bytes $SIZE_AVAIL -h)' smaller than the partition."
     fi
     
-    ui_echo "Finished file system verification on '$PARTITION'." green
+    ui_echo "Finished filesystem verification on '$PARTITION'." green
 }
 
 
@@ -3034,6 +3037,8 @@ media_filesystem_repair() {
 				run_command "sudo ntfsfix -d $PARTITION" $LINENO $VERBOSE
 				if (( $? )); then return 1 ; fi
             fi
+            
+            sleep .5
            # echo "Repairing ntfs filesystem..."         
             run_command "sudo ntfsresize -i -f $PARTITION" $LINENO $VERBOSE  # from gparted
             rc=$?
@@ -3141,7 +3146,7 @@ media_filesystem_rename() {
         media_volume_mount $PARTITION $YESNO $VERBOSE
     fi
     
-    sleep .5
+    #sleep .5
     echo "'$PARTITION' is named '$(media_filesystem_name $PARTITION)'"
 }
 
@@ -3164,6 +3169,7 @@ media_filesystem_resize(){
     local PARTNUM=$(media_device_partnum $1)
     local NEW_SIZE
     local STARTING_SIZE=$(media_filesystem_size $PARTITION)
+    local WAS_MOUNTED=$(media_filesystem_ismounted $PARTITION)
     
     local YESNO
     local VERBOSE
@@ -3187,49 +3193,34 @@ media_filesystem_resize(){
 
     case $FS_TYPE in
     
-        fat16|fat32|vfat)        
-            # You can't resize FAT32 partition lesser than 512Mb ??
-            
-            # test that fatresize works.
-            #TEST_SIZE=$(sudo fatresize -i $PARTITION | grep Size: | cut -d: -f2)
-            TEST_SIZE=$(sudo fatresize -i $PARTITION | grep "Cur size" | cut -d: -f2)
-            if [[ $(is_number $TEST_SIZE) = false ]]; then
-				ui_msg_error $LINENO "RESIZE" "fatresize does not work on this system. This may be limited to arm-64."
-				return 1
-            fi
-            
+        fat16|fat32)        
              case $SIZE in
 				min)    NEW_SIZE=$(media_filesystem_min $PARTITION )           ;;
 					# can't use fatresize 'max' function. it is the device max.
-				max)	NEW_SIZE=$(( $(media_partition_max $PARTITION) - $(media_partition_start $PARTITION) - $(( 1024 * 1024)) ))     ;;
+				max)	NEW_SIZE=$(( $(media_partition_max $PARTITION) - $(media_partition_start $PARTITION) ))     ;;
                  *) 	NEW_SIZE=$(bytes $SIZE -b)         ;;
              esac
             
-            #be sure not less than ~512M 
-		#	MIN_SIZE=$(bytes 540M -b)
-	#		if [[ $NEW_SIZE -lt $MIN_SIZE ]] ; then
-#				echo_red FAT minimum is $(bytes $MIN_SIZE -h)#
-#				NEW_SIZE=$MIN_SIZE                   
-#			fi 
+            
+            #check min.  fat16- 32M ?? fat32=512M 
+            local FS_MIN=$(media_filesystem_min $PARTITION)
+			if [[ $NEW_SIZE -lt $FS_MIN ]] ; then
+				echo_red $FS_TYPE minimum is $(bytes $FS_MIN -h)
+				NEW_SIZE=$FS_MIN                   
+			fi 
 			
-			NEW_SIZE=" -s $(( $NEW_SIZE / 1024 / 1024))M"
+			NEW_SIZE=" -s $(( $NEW_SIZE / 1024 ))k"
         
             echo_white "Resizing fat filesystem to '$NEW_SIZE'... (line $LINENO)"
-            #  run_command "sudo fatresize -p $NEW_SIZE $PARTITION" $LINENO
-            run_command "sudo fatresize -p -f $VERBOSE $NEW_SIZE $PARTITION" $LINENO -v
+            run_command "sudo fatresize -p $VERBOSE $NEW_SIZE $PARTITION" $LINENO -v
             # can be interactive... so don't use run_command
-            #X="sudo fatresize -p -f $VERBOSE $NEW_SIZE $PARTITION"
-            #echo_blue $X
-            #sudo fatresize -p -f $VERBOSE $NEW_SIZE $PARTITION
-            #"$X"
-			#eval $X
             rc=$?
             if (( $rc )); then
                 ui_msg_error $LINENO "fatresize failed with rc $rc"
                 return 1
             fi   
             ;;
-            
+        
         
         exfat)
             ui_msg_error $LINENO RESIZE "Cannot resize exfat filesystems.  Use Windows or DOS."
@@ -3241,16 +3232,11 @@ media_filesystem_resize(){
              case $SIZE in
                  min)    
                     NEW_SIZE="$(media_filesystem_min $PARTITION)"
-                #    if [[ $NEW_SIZE -lt $(bytes 512m -b) ]]; then
-                #        NEW_SIZE=$(bytes 512m -b)
-                #    fi
                     NEW_SIZE="-s $(( $NEW_SIZE / 1024 ))k"
                     ;;
                  max)    NEW_SIZE=""  ;;
                  *)      NEW_SIZE="-s $(( $(bytes $SIZE -b) / 1024 ))k"  ;;
              esac
-             
-             
             
             echo_white "Check filesystem is ready for resizing...line ($LINENO)"           
             run_command "sudo ntfsresize -c $PARTITION" $LINENO
@@ -3428,9 +3414,11 @@ media_disk_os() {
 
 media_volume_mount(){
     local PARTITION=$(media_device_fullname $1)
+  #  local OUTPUT
     
     local YESNO
     local VERBOSE
+   # local SILENT
     getargs $*  
     
     if [[ -z $1 ]]; then
@@ -3451,14 +3439,17 @@ media_volume_mount(){
     
     if [[ ! -z "$(sudo df | grep ^$PARTITION)" ]]; then  # it is already mounted
         return
-    fi    
-    
+    fi   
+
 
     if (( $(ui_yesno "MOUNT" "Mount $PARTITION" "$YESNO") )); then
         run_command "udisksctl mount -b $PARTITION" $LINENO $VERBOSE
         #udisksctl mount -b $PARTITION
     fi
+    
+    sleep .25
 }
+
         
         
 media_volume_unmount(){
@@ -3490,6 +3481,8 @@ media_volume_unmount(){
         fi
         
     fi
+    
+    sleep .25
 }     
 
 
@@ -3767,22 +3760,21 @@ media_volume_resize(){
         return 1
     fi
     
-    media_volume_unmount $PARTITION $YESNO    
-    if [[ $(media_filesystem_ismounted $PARTITION) = true ]]; then
-        echo $PARTITION is mounted
-        return 1
-    fi
+
     
     FS_SIZE=$(media_filesystem_size $PARTITION)
     
     case $SIZE in
-     #   min)    NEW_SIZE=$(media_filesystem_min $PARTITION)       ;;
         min)    NEW_SIZE=min       
                 NEW_SIZE_H=$(bytes $(media_filesystem_min $PARTITION) -h )
                 ;;
         
-        max)    NEW_SIZE=$(( $(media_partition_max $PARTITION) - $(media_partition_start $PARTITION)  )) 
+        max)    
+                
+                NEW_SIZE=$(( $(media_partition_max $PARTITION) - $(media_partition_start $PARTITION) )) 
                 NEW_SIZE_H=$(bytes $NEW_SIZE -h)   
+                echo_debug $LINENO max=$(media_partition_max $PARTITION) start=$(media_partition_start $PARTITION)
+                echo_debug $LINENO $NEW_SIZE $NEW_SIZE_H
                 ;;
         
         *)      NEW_SIZE=$(bytes $SIZE -b)       
@@ -3790,12 +3782,6 @@ media_volume_resize(){
                 ;;
     esac
  
-#echo_debug $LINENO NEW_SIZE=$NEWSIZE    
-    
- 
-    
-  #  echo
-  #  echo_white "Resize partition $PARTITION to $SIZE ($NEW_SIZE)"
     
 	local FS_TYPE=$(media_partition_fs_type $PARTITION)
     local VOLUME_SIZE=$(bytes $(media_filesystem_size $PARTITION) -h)
@@ -3821,53 +3807,60 @@ media_volume_resize(){
             return 1
         fi
     fi    
-   
-
-echo_debug $LINENO NEW_SIZE=$NEW_SIZE FS_SIZE=$FS_SIZE    
     
-    # shrink
-    if [[ $NEW_SIZE -lt $FS_SIZE ]]; then
-        #echo_green Shrink...
-        echo
-        echo_white " - Resize step 2/4: Shrink the FILESYSTEM to ..."
-        media_filesystem_resize $PARTITION $NEW_SIZE $YESNO $VERBOSE
-        if (( $? )); then return 1; fi
-        
-        sleep .5
-        echo
-        echo_white " - Resize step 3/4: Shrink PARTITION to fit FILESYSTEM..."   
-        case $(media_partition_fs_type $PARTITION) in
-			fat16|fat32|vfat) ;;
-			*) 			media_partition_resize $PARTITION min $YESNO $VERBOSE  ;;
-		esac	
-        if (( $? )); then return 1; fi
+#echo_debug $LINENO new=$NEW_SIZE  $(( $NEW_SIZE / 1024 / 1024 )) M 
+    
+    
+    media_volume_unmount $PARTITION -y  
+    #sleep 1
+    if [[ $(media_filesystem_ismounted $PARTITION) = true ]]; then
+        echo $PARTITION is mounted
+        return 1
     fi
     
     
+    case $FS_TYPE in
     
-    # grow
-    if [[ $NEW_SIZE -gt $FS_SIZE ]]; then
-        #echo_green Grow...
-        echo
-        echo_white " - Resize step 2/4: Grow the PARTTITION... " 
-        media_partition_resize $PARTITION $NEW_SIZE $YESNO $VERBOSE
-        if (( $? )); then return 1; fi
-        
-        sleep .5
-        echo
-        echo_white " - Resize step 3/4: Grow FILESYSTEM to fit PARTITION..."
-        #media_filesystem_resize_topart $PARTITION
-        case $(media_partition_fs_type $PARTITION) in
-            vfat|fat16|fat32)               ;; 
-            *)                  NEW_SIZE=max;;
-        esac
-        media_filesystem_resize $PARTITION $NEW_SIZE $YESNO $VERBOSE
-        if (( $? )); then return 1; fi
-    fi  
+        fat16|fat32|vfat)
+            media_filesystem_resize $PARTITION $NEW_SIZE -y $VERBOSE
+            ;;
+    
+        *)
+            # shrink
+            if [[ $NEW_SIZE -lt $FS_SIZE ]]; then
+                #echo_green Shrink...
+                echo
+                echo_white " - Resize step 2/4: Shrink the FILESYSTEM to ..."
+                media_filesystem_resize $PARTITION $NEW_SIZE $YESNO $VERBOSE
+                if (( $? )); then return 1; fi
+                
+                sleep .5
+                echo
+                echo_white " - Resize step 3/4: Shrink PARTITION to fit FILESYSTEM..."   
+                media_partition_resize $PARTITION min $YESNO $VERBOSE 
+                if (( $? )); then return 1; fi
+            fi
+            
+            # grow
+            if [[ $NEW_SIZE -gt $FS_SIZE ]]; then
+                #echo_green Grow...
+                echo
+                echo_white " - Resize step 2/4: Grow the PARTTITION... " 
+                media_partition_resize $PARTITION $NEW_SIZE $YESNO $VERBOSE
+                if (( $? )); then return 1; fi
+                
+                sleep .5
+                echo
+                echo_white " - Resize step 3/4: Grow FILESYSTEM to fit PARTITION..."
+                #media_filesystem_resize_topart $PARTITION
+                NEW_SIZE=max
+                media_filesystem_resize $PARTITION $NEW_SIZE $YESNO $VERBOSE
+                if (( $? )); then return 1; fi
+            fi  
+            ;;
+    esac
       
-      
-      
-    sleep 1
+    sleep .5
     echo  
     echo_white " - Resize step 4/4: Checking filesytem on $PARTITION..."
     media_filesystem_check $PARTITION $YESNO $VERBOSE
@@ -3876,15 +3869,11 @@ echo_debug $LINENO NEW_SIZE=$NEW_SIZE FS_SIZE=$FS_SIZE
         return 1
     fi      
     
-    #echo
-    #echo_white Summary
-    #run_command "sudo parted $DEVICE print free" $LINENO -v
-    
     echo
     echo "Volume '$PARTITION' is now size '$(bytes $(media_partition_size $PARTITION) -h )'"
     
-    sleep .5
-    media_volume_mount $PARTITION 
+   # sleep .5
+  #  media_volume_mount $PARTITION 
 }
 
  
