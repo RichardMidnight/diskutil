@@ -21,7 +21,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.58"  #2022-12-03
+VER="0.1.59"  #2022-12-03
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -847,6 +847,13 @@ media_device_name(){
 }
 
 
+media_disk_friendlyname(){
+    
+    echo "$1: [$(media_disk_model $1) - $(bytes $(media_device_size $1) -h)]"
+    
+}
+
+
 media_disk_pt_type(){
     # returns the partition table type
     #local PARTITION=$(media_device_fullname $1)
@@ -915,7 +922,16 @@ media_device_OS(){
 
 media_disk_model(){
     local DISK=$(media_device_name $1)
-    lsblk $DISK -n -d -o vendor,model | sed 's/  */ /g'
+    local MODEL=$(lsblk $DISK -n -d -o vendor,model | sed 's/  */ /g')
+    local MODEL_DEBLANKED=echo $MODEL | sed 's/ //g'
+#echo_debug "$LINENO '$MODEL'"
+    
+    if [[ -z $MODEL_DEBLANKED ]]; then
+#echo_debug $LINENO  $MODEL  
+        MODEL=$(sudo parted $DISK print free | grep Model | cut -d: -f2 | cut -d'(' -f1 )
+#echo_debug $LINENO  $MODEL 
+    fi
+    echo $MODEL
 }
 
 media_disk_serial(){
@@ -929,6 +945,24 @@ media_disk_blocksize(){
     
     echo $(( 512 * 2048 ))
 }
+
+media_disk_listdisks(){
+    local DISK
+    local DISKS=$(lsblk -n -d -o name)
+    
+    local YESNO
+    local VERBOSE
+    getargs $*   
+    
+    if [[ ! -z $VERBOSE ]]; then
+        ui_msg "DISKS" " " white
+    fi
+    
+    for DISK in $DISKS; do
+        echo $(media_disk_friendlyname $DISK)
+    done
+}
+
 
 media_disk_align(){
     # returns an aligned byte number
@@ -1418,7 +1452,8 @@ media_disk_test () {
         return 
     fi
     
-    echo "DISK: $DISK '$SERIAL' $SIZE"
+    #echo "DISK: $DISK '$SERIAL' $SIZE"
+    echo $(media_disk_friendlyname $DISK)
     if (( $? )); then return 1; fi
     
     local PT_TYPE=$(media_disk_pt_type $DISK)
@@ -2023,7 +2058,10 @@ media_device_info (){
         echo "Usage: diskutil info [disk | volume] [-v]"
         echo
         #run_command "lsblk -o name,type,size,fstype,fssize,fsuse%,label,vendor,model,serial" $LINENO -v
-        run_command "lsblk -f" $LINENO -v
+       # run_command "lsblk -f" $LINENO -v
+        ui_msg  "DISKS" " " white
+        media_disk_listdisks   
+       
         return
     fi    
         
@@ -2537,11 +2575,10 @@ media_partition_resize(){
         FS_TYPE=$(media_partition_fs_type $PARTITION)
         if [[ $FS_TYPE = fat32 ]] || [[ $FS_TYPE = fat16 ]]; then
             echo_white fat16 and fat32 partitions resize automatically.  Use -f to force it.
-         #   if [[ $FORCE != -f ]]; then
-         #     return
-         #   fi
+            if [[ $FORCE != -f ]]; then
+              return
+            fi
         fi
-
 
         case $SIZE in
         min)
@@ -2558,26 +2595,11 @@ media_partition_resize(){
             
         max)
             END=$(media_partition_max $PARTITION) 
-            END=$(( $END - 1 ))  # could this be -1?  512 may be needed
-            
-            # align  END
-            # dont align END if MAX
-         #   if [[ $(( $(($END + 1 )) % $BLOCK_SIZE )) -ne 0 ]] ; then   # if 0 then it is aligned
-         #     #  END=$(( $END + $BLOCK_SIZE ))  # add another block
-         #       END=$(( $END / $BLOCK_SIZE * BLOCK_SIZE ))  # trunkcate to next block
-         #       END=$(( $END - 1 ))
-         #   fi           
+            END=$(( $END ))  # could this be -1?  512 may be needed
             ;;
                 
         *)
             END=$(( $(media_partition_start $PARTITION) + $(bytes $SIZE -b) ))
-            
-            # align  END
-         ##   if [[ $(( $(($END + 1 )) % $BLOCK_SIZE )) -ne 0 ]] ; then   # if 0 then it is aligned
-              #  END=$(( $END + $BLOCK_SIZE ))  # add another block
-         ##       END=$(( $END / $BLOCK_SIZE * BLOCK_SIZE ))  # trunkcate to next block
-         ##       END=$(( $END - 1 ))
-         ##   fi   
             ;;
         esac
         
@@ -2598,14 +2620,14 @@ media_partition_resize(){
         fi
 
 
-        echo_white "Resizing $PARTITION to $SIZE endpoint='$END' "
+        ui_msg "RESIZE" "Resizing Partition $PARTITION to $(bytes $SIZE -h) endpoint='$END'... " white
         run_command "sudo parted $DEVICE unit B resizepart $PART_NUM $END" $LINENO -v   # -v verbose lets it ask y/n to continue
         if (( $? )); then return 1; fi
         
         
         if [[ $FS_TYPE = ntfs ]]; then
     #    echo_debug $LINENO $PARTITION $FS_TYPE
-            echo_white Fixing ntfs file system ...
+            ui_msg "RESIZE" "Fixing ntfs file system ..."
             sleep .5
             run_command "sudo ntfsfix -d $PARTITION" $LINENO
             if (( $? )); then # run it again
@@ -2615,7 +2637,7 @@ media_partition_resize(){
             fi
         fi
         
-        echo_white "$PARTITION partition resized to $( bytes $(( $END - $(media_partition_start $PARTITION) )) -h)"
+        ui_msg "RESIZE" "$PARTITION partition resized to $( bytes $(( $END - $(media_partition_start $PARTITION) )) -h)" green
 }
 
 
@@ -2985,7 +3007,7 @@ media_filesystem_repair() {
     fi
     
     local FS_TYPE=$(media_partition_fs_type $PARTITION)
-    echo_white "Repairing '$FS_TYPE' file system on $PARTITION ... "
+    ui_msg "REPAIR" "Repairing '$FS_TYPE' file system on $PARTITION ... "
     
     sleep .5
     
@@ -3084,7 +3106,7 @@ media_filesystem_repair() {
         media_volume_mount $PARTITION -y
     fi
     
-     ui_echo "~ filesystem_repair OK" green
+     ui_msg "REPAIR" "Filesystem_repair OK" green
      
      
 }
@@ -3173,8 +3195,8 @@ media_filesystem_resize(){
  #   media_filesystem_repair $PARTITION -y $VERBOSE
  #   if (( $? )); then return 1; fi   
    
-    echo
-    echo_white "Resize '$FS_TYPE' filesystem to '$SIZE' "
+    local CUR_SIZE=$(bytes $(media_device_size $PARTITION) -h)
+    ui_msg "RESIZE" "Resize  '$FS_TYPE' filesystem from $CUR_SIZE to '$(bytes $SIZE -h)' " white
 	sleep .5
 
     case $FS_TYPE in
@@ -3195,9 +3217,9 @@ media_filesystem_resize(){
 				NEW_SIZE=$FS_MIN                   
 			fi 
 			
-			NEW_SIZE=" -s $(( $NEW_SIZE / 1024 ))k"
+			NEW_SIZE=" -s $(( $NEW_SIZE / 1024 / 1024 ))M"
         
-            echo_white "Resizing fat filesystem to '$NEW_SIZE'... (line $LINENO)"
+          #  echo_white "Resizing fat filesystem to '$NEW_SIZE'... (line $LINENO)"
             run_command "sudo fatresize -p $VERBOSE $NEW_SIZE $PARTITION" $LINENO -v
             # can be interactive... so don't use run_command
             rc=$?
@@ -3244,8 +3266,6 @@ media_filesystem_resize(){
             echo_white ntfs info...
             run_command "sudo ntfsresize -i $PARTITION" $LINENO
             if (( $? )); then return 1; fi
-            echo
-            sleep 1
             ;;
             
             
@@ -3259,7 +3279,6 @@ media_filesystem_resize(){
             echo_white "Resizing $PARTITION to $NEW_SIZE"
             run_command "sudo resize2fs -p $PARTITION $NEW_SIZE" $LINENO    #from gparted
             if (( $? )); then return 1; fi
-            sleep 1
             ;;       
             
             
@@ -3274,8 +3293,10 @@ media_filesystem_resize(){
             
     esac
     
-    echo
-    echo_white $PARTITION filesystem resized to from $(bytes $STARTING_SIZE -h) to $(bytes $(media_filesystem_size $PARTITION) -h)
+    sleep .5
+    
+    #echo
+    ui_msg "RESIZE" "$PARTITION filesystem resized to from $(bytes $STARTING_SIZE -h) to $(bytes $(media_filesystem_size $PARTITION) -h)" green
 }
 
 
@@ -3736,7 +3757,7 @@ media_volume_resize(){
     getargs $*
     
   #  echo_debug  $LINENO $FORCE
-    echo_white Resize Volume $PARTITION ...
+    ui_msg "RESIZE" "Resize Volume $PARTITION to $SIZE..." white
     
     media_device_checktarget $PARTITION part
     if (( $? )); then echo_debug $LINENO ; return 1; fi
@@ -3761,7 +3782,6 @@ media_volume_resize(){
                 ;;
         
         max)    
-                
                 NEW_SIZE=$(( $(media_partition_max $PARTITION) - $(media_partition_start $PARTITION) )) 
                 NEW_SIZE_H=$(bytes $NEW_SIZE -h)   
                 echo_debug $LINENO max=$(media_partition_max $PARTITION) start=$(media_partition_start $PARTITION)
@@ -3772,7 +3792,6 @@ media_volume_resize(){
                 NEW_SIZE_H=$(bytes $NEW_SIZE -h)
                 ;;
     esac
- 
     
 	local FS_TYPE=$(media_partition_fs_type $PARTITION)
     local VOLUME_SIZE=$(bytes $(media_filesystem_size $PARTITION) -h)
@@ -3787,7 +3806,7 @@ media_volume_resize(){
    # if (( $? )); then return 1; fi
    
    
-    echo_white " - Step 1/4 Repairing filesystem before resize..."
+    ui_msg "RESIZE" "Repairing filesystem before resize..." white
     media_filesystem_repair $PARTITION -y $VERBOSE
     if (( $? )); then
         ui_msg_error $LINENO "Error running filesystem repair.  Cannot resize."
@@ -3813,7 +3832,10 @@ media_volume_resize(){
     case $FS_TYPE in
     
         fat16|fat32|vfat)
+            echo
+       #     ui_msg "RESIZE" "Resize the FILESYSTEM to $NEW_SIZE_H..." white
             media_filesystem_resize $PARTITION $NEW_SIZE -y $VERBOSE
+            if (( $? )); then return 1; fi
             ;;
     
         *)
@@ -3821,13 +3843,13 @@ media_volume_resize(){
             if [[ $NEW_SIZE -lt $FS_SIZE ]]; then
                 #echo_green Shrink...
                 echo
-                echo_white " - Resize step 2/4: Shrink the FILESYSTEM to ..."
+         #       ui_msg "RESIZE" "Shrink the FILESYSTEM to $NEW_SIZE_H..." white
                 media_filesystem_resize $PARTITION $NEW_SIZE $YESNO $VERBOSE
                 if (( $? )); then return 1; fi
                 
                 sleep .5
                 echo
-                echo_white " - Resize step 3/4: Shrink PARTITION to fit FILESYSTEM..."   
+         #       ui_msg "RESIZE" "Shrink PARTITION to fit FILESYSTEM..." white  
                 media_partition_resize $PARTITION min $YESNO $VERBOSE 
                 if (( $? )); then return 1; fi
             fi
@@ -3836,13 +3858,13 @@ media_volume_resize(){
             if [[ $NEW_SIZE -gt $FS_SIZE ]]; then
                 #echo_green Grow...
                 echo
-                echo_white " - Resize step 2/4: Grow the PARTTITION... " 
+         #       ui_msg "RESIZE" "Grow the PARTTITION to $NEW_SIZE_H... " 
                 media_partition_resize $PARTITION $NEW_SIZE $YESNO $VERBOSE
                 if (( $? )); then return 1; fi
                 
                 sleep .5
                 echo
-                echo_white " - Resize step 3/4: Grow FILESYSTEM to fit PARTITION..."
+         #       ui_msg "RESIZE" "Grow FILESYSTEM to fit PARTITION..."
                 #media_filesystem_resize_topart $PARTITION
                 NEW_SIZE=max
                 media_filesystem_resize $PARTITION $NEW_SIZE $YESNO $VERBOSE
@@ -3853,7 +3875,7 @@ media_volume_resize(){
       
     sleep .5
     echo  
-    echo_white " - Resize step 4/4: Checking filesytem on $PARTITION..."
+    ui_msg "RESIZE"  "Checking filesytem on $PARTITION after resize..." white
     media_filesystem_check $PARTITION $YESNO $VERBOSE
     if (( $? )); then
         ui_msg_error $LINENO "Errors on filesystem $PARTITION after resizing."
@@ -3861,10 +3883,8 @@ media_volume_resize(){
     fi      
     
     echo
-    echo "Volume '$PARTITION' is now size '$(bytes $(media_partition_size $PARTITION) -h )'"
+    ui_msg "RESIZE" "Volume '$PARTITION' is now size '$(bytes $(media_partition_size $PARTITION) -h )'" green
     
-   # sleep .5
-  #  media_volume_mount $PARTITION 
 }
 
  
@@ -4338,6 +4358,12 @@ unmount
 
 
 disk_utility_help(){
+  
+    local YESNO
+    local VERBOSE
+    getargs $*  
+    
+    
 echo "Disk Utility Tool  ver $VER
 Utility to manage local disks and physical volumes. Inspired by Apple's diskutil
 A physical volume refers to a drive or partition plus it's filesystem.
@@ -4380,19 +4406,23 @@ Usage:  diskutil [quiet] <verb> <options> [-y] [-v], where <verb> is as follows:
      initDisk           (initilize a disk with a new partition table, removing all data)
      addVolume          (Create a new partition to occupy free space)
      delVolume          (Delete a partition)
-     recoverPartitionTable (parted rescue mode)
-
-  -- HIDDEN VERBS ---
+     recoverPartitionTable (parted rescue mode)"
+     
+     
+if [[ ! -z $VERBOSE ]]; then     
+echo "
+-- HIDDEN VERBS ---
 
      resizePart         (Resizes just the Partition)
      resizeFS           (Resizes just the Filesystem)
      wipe               (wipe entire partition with zero|random|shred)
      badBlocks          (check Partition or Disk for bad blocks)
      hexedit            (view/edit Partition or Disk)
-
-diskutil <verb> with no options will provide help on that verb
 "
+fi
 
+echo "
+diskutil <verb> with no options will provide help on that verb  "
 
      
 #     zeroDisk             (Erase a disk, writing zeros to the media)
@@ -4433,7 +4463,9 @@ case $CMD in
         ;;
         
     -h|--help)
-        disk_utility_help
+        disk_utility_help -v
+        echo
+        media_disk_listdisks -v
         exit
         ;;
         
@@ -4523,6 +4555,8 @@ case $CMD in
                 
     *)
         disk_utility_help
+        echo
+        media_disk_listdisks -v
         #error $LINENO "Command '$CMD' not recognized"
         #exit
         ;;
