@@ -21,7 +21,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.59"  #2022-12-03
+VER="0.1.61"  #2022-12-03
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -31,7 +31,7 @@ SETTINGS="/home/$USER/.config/$SCRIPTNAME/$SCRIPTNAME.conf"
 LOG_FILE="/home/$USER/.config/$SCRIPTNAME/$SCRIPTNAME.log"
 LOG=on
 
-FILESYSTEMS="fat16 fat32 exfat ntfs ext2 ext3 ext4 linux-swap freespace hfs+ hfs"
+FILESYSTEMS="fat16 fat32 exfat ntfs ext2 ext3 ext4 linux-swap freespace hfs+ hfs xfs btrfs"
 
 REQUIRED_TOOLS="dd pv bc file nano parted "
 
@@ -158,7 +158,7 @@ sudo zypper install smartmontools
 }
 
 
-env_install_fs_support(){
+media_filesystem_install(){
     # installs support for a filesystem
     local FS_TYPE=$1
     local INSTALL=$(env_installer)
@@ -243,7 +243,33 @@ env_install_fs_support(){
             
         unformatted)        
             ;;
+            
+        zfs)
+			# https://wiki.debian.org/ZFS
+            
+            #https://openzfs.github.io/openzfs-docs/Getting%20Started/Debian/index.html#installation
+        #    sudo apt install dpkg-dev linux-headers-generic linux-image-generic
+        #    sudo apt install zfs-dkms zfsutils-linux
+            
+            # https://tweenpath.net/install-setup-zfs-debian-11/
+			#run_command "sudo apt install linux-headers-amd64" $LINENO
+			#run_command "sudo apt install -t buster-backports zfsutils-linux" $LINENO
+            
+            #run_command "sudo apt install zfsutils-linux zfs-dkms zfs-zed $YESNO" $LINENO
+			;;
                     
+        xfs)
+			#
+			run_command "sudo apt install xfsprogs $YESNO" $LINENO
+			;;
+            
+            
+        btrfs)
+            # https://www.thegeekdiary.com/how-to-check-btrfs-filesystem-usage-and-perform-balancing/
+            # https://www.tecmint.com/create-btrfs-filesystem-in-linux/
+            run_command "sudo apt install btrfs-tools -y" $LINENO -v
+            run_command "modprobe btrfs" $LINENO -v # enable the Kernel module for btrfs
+            ;;    
           
         *)  
             echo unknown filesystem: $FS_TYPE.  line $LINENO
@@ -923,7 +949,7 @@ media_device_OS(){
 media_disk_model(){
     local DISK=$(media_device_name $1)
     local MODEL=$(lsblk $DISK -n -d -o vendor,model | sed 's/  */ /g')
-    local MODEL_DEBLANKED=echo $MODEL | sed 's/ //g'
+    local MODEL_DEBLANKED=$(echo $MODEL | sed 's/ //g')
 #echo_debug "$LINENO '$MODEL'"
     
     if [[ -z $MODEL_DEBLANKED ]]; then
@@ -943,12 +969,16 @@ media_disk_blocksize(){
     # returns the blocksize of the disk
     local DISK=$(media_device_fullname $1)
     
-    echo $(( 512 * 2048 ))
+  #  echo $(( 512 * 2048 ))
+    
+    sudo blockdev --getbsz $DISK
+
 }
 
 media_disk_listdisks(){
     local DISK
-    local DISKS=$(lsblk -n -d -o name)
+    #local DISKS=$(lsblk -n -d -e11 -o name)   # -e11 excludes cdrom
+    local DISKS=$(lsblk -n -d -o name) 
     
     local YESNO
     local VERBOSE
@@ -1133,6 +1163,10 @@ media_filesystem_min(){
 
          hfs+|hfsplus|hfs)
             ;;
+            
+         xfs)
+            FS_MIN=$(media_filesystem_size $PARTITION)
+            ;;
 
         '') ;;
 
@@ -1180,14 +1214,9 @@ media_filesystem_size(){
             FS_SIZE=$(sudo fsck.fat -n -v $PARTITION | grep "data clusters" | cut -d\( -f2 | cut -d" " -f1)
             ;;
             
-            
         exfat)
-#echo_debug $LINENO    
-#echo_debug $LINENO      $(sudo fsck.exfat  $PARTITION | grep Volume )
             FS_SIZE=$(sudo fsck.exfat  $PARTITION | grep Volume | sed 's/  */ /g' | cut -d' ' -f3-4 | tr -d ' ')
-#echo_debug $LIINENO $FS_SIZE     $(bytes $FS_SIZE -b)       
             ;;     
-            
             
         ntfs)
             # clear dirty bit
@@ -1212,6 +1241,32 @@ media_filesystem_size(){
             local BLOCKS=$(sudo mkfs.hfs -N $PARTITION | grep "total blocks" | cut -d: -f2 | tr -d " ")
             FS_SIZE=$(( $BLOCKS * $BLOCKSIZE ))
             ;;
+            
+        xfs)
+            local WAS_MOUNTED=$(media_filesystem_ismounted $PARTITION)
+            local MNT=$(media_volume_mount $PARTITION -y)  
+            sleep .5
+            local MOUNTPOINT=$(lsblk $PARTITION -n -o mountpoint)
+            local BLOCKSIZE=$(sudo xfs_growfs -n  $MOUNTPOINT | grep ^data | cut -d= -f3 | cut -d' ' -f1)
+            local BLOCKS=$(sudo xfs_growfs -n  $MOUNTPOINT | grep ^data | cut -d= -f4 | cut -d',' -f1)
+  
+  #echo_debug $LINENO BS=$BLOCKSIZE BL=$BLOCKS 
+   
+            FS_SIZE=$(( $BLOCKS * $BLOCKSIZE ))
+            
+            #FS_SIZE=$(lsblk -b -n $PARTITION -o fssize)
+         
+            if [[ $WAS_MOUNTED = true ]]; then
+              #sleep .5
+                MNT=$(media_volume_unmount $PARTITION -y -f)
+                #udisksctl unmount -f -b $PARTITION > /dev/null
+                sleep .5
+            fi
+            ;;
+        btrfs)
+            FS_SIZE=$( sudo btrfs inspect-internal min-dev-size $PARTITION )
+        ;;    
+            
             
         '') ;;   
             
@@ -2054,6 +2109,9 @@ media_disk_format(){
 media_device_info (){
     # returns information about a device.
     
+    local PARTITION=$(media_device_fullname $1)
+    
+    # if no device specified...
     if [[ -z $1 ]]; then
         echo "Usage: diskutil info [disk | volume] [-v]"
         echo
@@ -2064,17 +2122,21 @@ media_device_info (){
        
         return
     fi    
-        
-        
-  echo_debug $LINENO  $(media_device_type $1)
-   #     if [[ $(media_device_type $2) = disk ]]; then
+      
+    #media_disk_listdisks -v   
+
+	echo
     media_disk_info $1 $2 $3 $4 $5
     
-    
+    echo 
     media_filesystem_info $1 $2 $3 $4 $5
+    
+  #  media_volume_unmount $PARTITION
+  #  sleep 2
+    
+  #  echo
+  #  media_partition_os $PARTITION
 }
-
-
 
 
 media_device_wipe(){
@@ -2498,6 +2560,18 @@ media_partition_format(){
             ;;
             
         unformatted)  ES=
+            ;;
+            
+        xfs)
+			run_command "sudo mkfs.xfs -f -L '$FS_NAME' $PARTITION" $LINENO $VERBOSE  # -v=volumename
+			;;
+			
+		zfs)
+			run_command "sudo mkfs.zfs -v '$FS_NAME' $PARTITION" $LINENO $VERBOSE  # -v=volumename
+			;;
+            
+        btrfs)
+            run_command "sudo mkfs.btrfs -L '$FS_NAME' $PARTITION" $LINENO $VERBOSE
             ;;
             
         *)
@@ -2927,6 +3001,23 @@ media_filesystem_check() {
                 if (( $? )) ; then return 1; fi
             fi    
             ;;
+            
+        xfs)
+            run_command "sudo xfs_repair -n $VERBOSE $PARTITION 2> /dev/null"  $LINENO  $VERBOSE
+            if (( $? )); then 
+                if (( ! $(ui_yesno "VERIFY" "Errors found.  Try to fix" $YESNO) )); then
+                    echo
+                    return 1
+                fi
+                echo_white  "Attempting to repair filesystem..."
+                media_filesystem_repair $PARTITION -y $VERBOSE
+                if (( $? )) ; then return 1; fi
+            fi                
+            ;;
+            
+        btrfs)
+            run_command "sudo btrfs check $PARTITION " $LINENO $VERBOSE
+        ;;    
         
         *)
             ui_msg_error $LINENO "Filesystem '$FILESYSTEM' not supported"
@@ -3094,6 +3185,14 @@ media_filesystem_repair() {
             if (( $? )); then return 1; fi
             ;;
             
+        xfs)
+            run_command "sudo xfs_repair $VERBOSE $PARTITION"  $LINENO  $VERBOSE
+            if (( $? )) ; then return 1; fi
+            ;;            
+            
+        btrfs)
+            run_command "sudo btrfs check --repair $PARTITION " $LINENO $VERBOSE
+        ;;        
             
         *)
             ui_msg_error $LINENO "Unsupported file system '$FS_TYPE'"
@@ -3148,6 +3247,9 @@ media_filesystem_rename() {
            # hrename, but I do not understand the syntax
             hfs+|hfsplus)       run_command "sudo hplabel $PARTITION '$NAME'" $LINENO $VERBOSE  ;;   
             hfs)                run_command "sudo hlabel $PARTITION '$NAME'" $LINENO $VERBOSE  ;;   
+            xfs)                run_command "sudo xfs_admin -L '$NAME' $PARTITION" $LINENO $VERBOSE ;;
+            zfs)        ;;
+            btrfs)              run_command "mkfs.btrfs -L '$NAME' $PARTITION" $LINENO $VERBOSE;;
             *)                  echo "Unknown filesystem '$FS_TYPE'" ;;
         esac
     fi
@@ -3287,6 +3389,13 @@ media_filesystem_resize(){
             return 1
             ;;    
             
+        xfs)
+            xfs_growfs , 
+            ;;
+            
+        btrfs)
+            run_command "mkfs.btrfs -b $NEW_SIZE $PARTITION" $LINENO
+            ;;
        *)
             ui_msg_error $LINENO "Unknown filesystem type '$FS_TYPE'"
             ;;
@@ -3302,7 +3411,7 @@ media_filesystem_resize(){
 
 media_partition_os() {
     # returns name of os found on partition
-	local MEDIA=$1
+	local MEDIA=$(media_device_name $1)
 	local PARTITION=$2
 	
 	local PARTED_OUTPUT=
@@ -3315,6 +3424,8 @@ media_partition_os() {
 	local BITS=
 	local READONLY=
 	local OVERLAY=
+    
+    echo_debug $LINENO  starting OS search
   
     PARTED_OUTPUT=$(sudo parted -ms "$MEDIA" unit B print)
     if (( $? )); then
@@ -3481,12 +3592,10 @@ media_volume_unmount(){
  #   fi
     
     if [ ! -z "$(sudo df | grep ^$PARTITION)" ]; then
-    
         if (( $(ui_yesno "UNMOUNT" "Unmount $PARTITION?" $YESNO) )); then
             run_command "udisksctl unmount $FORCE -b $PARTITION" $LINENO $VERBOSE
             #udisksctl unmount -b $PARTITION
         fi
-        
     fi
     
     sleep .25
@@ -3518,11 +3627,11 @@ media_filesystem_info(){
     fi
 
     #echo
-    media_volume_unmount $PARTITION $YESNO $VERBOSE
+    media_volume_mount $PARTITION $YESNO $VERBOSE
     
     
         # gather partition info...
-        echo
+       # echo
         echo_white "Partition and Filesystem details  ============"
         echo Gathering partition details...
        
@@ -3542,6 +3651,7 @@ media_filesystem_info(){
         local FS_NAME=$(media_filesystem_name $PARTITION)
         local FS_SIZE=$(media_filesystem_size $PARTITION)
         local FS_MIN=$(media_filesystem_min $PARTITION) 
+# echo_debug "$LINENO: '$PART_START' '$BLOCK_SIZE' fs_size=$FS_SIZE"        
         
         if [[ $(( $PART_START % $BLOCK_SIZE )) -eq 0 ]]; then
             local PART_START_ALIGNED=Aligned
@@ -3572,7 +3682,6 @@ media_filesystem_info(){
         fi
      
     
-        
 
         echo "DEVICE NAME  = $DEVICE_NAME"
         echo "MODEL        = $(media_disk_model $DEVICE)"
@@ -3607,9 +3716,15 @@ media_filesystem_info(){
         fi
   #  fi
     
+    echo
+    media_filesystem_check $PARTITION
+
+# echo_debug "$LINENO was=$WAS_MOUNTED part=$PARTITION ver=$VERBOSE" 
     
     # remount ?
-    if [[ -z $(media_filesystem_ismounted $PARTITION) ]] && [[ ! -z  $WAS_MOUNTED ]] ; then
+    #if [[ -z $(media_filesystem_ismounted $PARTITION) ]] && [[ ! -z  $WAS_MOUNTED ]] ; then
+    if [[ $WAS_MOUNTED = true ]] ; then
+        sleep .5
         media_volume_mount $PARTITION -y $VERBOSE
     fi
 }
@@ -3716,6 +3831,8 @@ media_volume_add(){
     fi
 
     do_beep_up
+    
+    media_volume_mount $PARTITION
 }
 
 
@@ -4364,8 +4481,8 @@ disk_utility_help(){
     getargs $*  
     
     
-echo "Disk Utility Tool  ver $VER
-Utility to manage local disks and physical volumes. Inspired by Apple's diskutil
+#echo "Disk Utility Tool  ver $VER
+echo "Utility to manage local disks and physical volumes. Inspired by Apple's diskutil
 A physical volume refers to a drive or partition plus it's filesystem.
 Most commands DO NOT require an administrator or root user
 WARNING: Most destructive operations are not prompted
@@ -4433,27 +4550,25 @@ diskutil <verb> with no options will provide help on that verb  "
 }
 
 
+echo $PRODUCTNAME $VER
 
 # check for updates
-if [[  $1 = -u ]]; then
+#if [[  $1 = -u ]]; then
     diskutil_update
-    exit
-fi
+#    exit
+#fi
 
 #install required tools
 env_install_tools
 
 # install filesystem support 
-for FS in $FILESYSTEMS ; do
-    env_install_fs_support $FS
-done
+#for FS in $FILESYSTEMS ; do
+#    media_filesystem_install $FS
+#done
 
 
-#media_device_fullname
 CMD=$1  
 TARGET=$(media_device_fullname $2)
-#SPECS=$3
-
 
 
 case $CMD in
@@ -4535,6 +4650,8 @@ case $CMD in
     hexedit)                sudo hexedit $(media_device_fullname $2);;
     
     os)                     media_disk_os    $2 $3 ;;
+    
+    install)				media_filesystem_install $2 $3 ;;
             
     clone)
         SOURCE=$1
