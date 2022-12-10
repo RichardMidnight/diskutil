@@ -21,7 +21,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.62"  #2022-12-03
+VER="0.1.63"  #2022-12-03
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -276,7 +276,8 @@ media_filesystem_install(){
             # https://www.thegeekdiary.com/how-to-check-btrfs-filesystem-usage-and-perform-balancing/
             # https://www.tecmint.com/create-btrfs-filesystem-in-linux/
             if (( $(ui_yesno "INSTALL FS" "Install support for $FS_TYPE" $YESNO) )); then
-                run_command "sudo apt install btrfs-tools -y" $LINENO -v
+               # run_command "sudo apt install btrfs-tools -y" $LINENO -v
+                run_command "sudo apt install btrfs-progs -y" $LINENO -v
                 run_command "sudo modprobe btrfs" $LINENO -v # enable the Kernel module for btrfs
             fi
             ;;
@@ -1325,8 +1326,8 @@ retire_media_partition_table(){
     DEVICE=$(media_device_name $1)
     
     #using fdisk
-    sudo fdisk -l $DEVICE | grep Disklabel | cut -d: -f2 | tr -d " "
-    return
+    #sudo fdisk -l $DEVICE | grep Disklabel | cut -d: -f2 | tr -d " "
+    #return
     
     #using gparted
     sudo parted $DEVICE print | grep "Partition Table" | cut -d: -f2 | tr -d " "
@@ -1337,6 +1338,7 @@ media_disk_partcount(){
     # returns the number of paritions on a disk
     local DEVICE=$1
     
+    sleep .5
     # using parted
     # local last_part_num=$(sudo parted -ms "$DEVICE" unit B print |  tail -n 1 | cut -d ':' -f 1)
     
@@ -1359,7 +1361,6 @@ media_partition_record(){
     local DEVICE=$(media_device_name $1)
     local PARTNUM=$(media_device_partnum $1)  
     sudo parted -ms $DEVICE unit B print |  grep ^$PARTNUM:  | tr -d 'B'
-    
 }
 
 
@@ -2903,15 +2904,14 @@ media_filesystem_check() {
     FS_TYPE=$(media_partition_fs_type $PARTITION)
     echo_white "Verifying FileSystem on '$PARTITION' ($FS_TYPE)...   "  
 
-    # unmount  this may be unnecessary for a check
-  #  local WAS_MOUNTED=$(media_filesystem_ismounted $PARTITION)
-  #  media_volume_unmount $PARTITION -y
+    # unmount  unmounting produces better results, at least with vfat
+    local WAS_MOUNTED=$(media_filesystem_ismounted $PARTITION)
+    media_volume_unmount $PARTITION -y
 
-    
-  #  if [[ $(media_filesystem_ismounted $PARTITION) = true ]]; then
-  #      echo Volume $PARTITION is mounted.  Cannot verify it.
-  #      return 1
-  #  fi
+    if [[ $(media_filesystem_ismounted $PARTITION) = true ]]; then
+        echo Volume $PARTITION is mounted.  Cannot verify it.
+        return 1
+    fi
 
 	sleep .5
     
@@ -3058,10 +3058,9 @@ media_filesystem_check() {
     local PART_SIZE=$(media_partition_size $PARTITION)    
     local SIZE_AVAIL=$(( $PART_SIZE - $FS_SIZE ))
     
-  #  if [[ $WAS_MOUNTED = true ]]; then
-  #      media_volume_mount $PARTITION -y
-  #  fi   
-    
+    if [[ $WAS_MOUNTED = true ]]; then
+        media_volume_mount $PARTITION -y
+    fi   
     
     if [[ $SIZE_AVAIL -lt o ]]; then
         echo_debug $LINENO FS_SIZE=$FS_SIZE  $(bytes $FS_SIZE -h)
@@ -4618,10 +4617,11 @@ diskutil <verb> with no options will provide help on that verb  "
 }
 
 
-echo $PRODUCTNAME $VER
+
 
 # check for updates if not not just getting version
 if [[  $1 != -v ]]; then
+    echo $PRODUCTNAME $VER
     diskutil_update
 #    exit
 fi
