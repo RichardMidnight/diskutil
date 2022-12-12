@@ -21,7 +21,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.66"  #2022-12-03
+VER="0.1.67"  #2022-12-03
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -1213,7 +1213,7 @@ media_filesystem_size_alt(){
 	
 	media_volume_mount $PARTITION -y  > /dev/null
 	
-	FS_SIZE=$(lsblk -n -b -f /dev/sda2 -o fssize)
+	FS_SIZE=$(lsblk -n -b -f $PARTITION -o fssize)
 	
 	echo $FS_SIZE
 	
@@ -1236,6 +1236,8 @@ media_filesystem_size(){
     local FS_TYPE=$(media_partition_fs_type $1)    
     local FS_SIZE
      
+   #  echo_debug $LINENO 
+     
     media_device_checktarget $PARTITION part
     if (( $? )) && [[ $(media_disk_partcount $DISK) != 0 ]]; then echo_debug $LINENO ; return 1; fi     
      
@@ -1251,14 +1253,20 @@ media_filesystem_size(){
         exfat)
             # fsck.exfat does not give enough resolution...
             # FS_SIZE=$(sudo fsck.exfat $PARTITION -v | grep "volume size" | sed 's/  */ /g' | cut -d' ' -f3-4 | tr -d ' ')
-            
-           
             ;;     
             
         ntfs)
             # clear dirty bit
             sudo ntfsfix -d $PARTITION >> /dev/null
-            FS_SIZE=$(sudo ntfsresize -i "$PARTITION" | grep "Current volume size:" | cut -d: -f2 | sed 's/ //g')
+          #  FS_SIZE=$(sudo ntfsresize -i "$PARTITION" | grep "Current volume size:" | cut -d: -f2 | sed 's/ //g')
+#sleep .5
+            # can't put quotes around $PARTITION
+            FS_SIZE=$(sudo ntfsresize -i $PARTITION | grep 'Current volume size:' | cut -d':' -f2 | cut -d'b' -f1 | sed 's/ //g')
+#sleep .5
+#echo_debug "$LINENO size='$FS_SIZE'"
+
+#echo_debug "$LINENO fs=$(sudo ntfsresize -i $PARTITION) "
+
             ;;
             
         ext2|ext3|ext4)       
@@ -1314,7 +1322,7 @@ media_filesystem_size(){
     
     if [[ -z $FS_SIZE ]]; then
         echo_debug $LINENO Using media_filesystem_size_alt
-		FS_SIZE=media_filesystem_size_alt $PARTITION
+		FS_SIZE=$(media_filesystem_size_alt $PARTITION)
     fi
     
     echo $(bytes $FS_SIZE -b)
@@ -2854,7 +2862,7 @@ media_filesystem_check() {
             rc2=$?           
             
             if (( $rc )) || (( $rc2 )); then
-                ui_msg_error $LINENO "ntfsfix failed with rc $rc"
+                ui_msg_error $LINENO "ntfsfix failed with rc $rc or $rc2"
                 if (( ! $(ui_yesno "VERIFY" "Errors found.  Try to fix" $YESNO ) )); then
                     echo
                     return 1
@@ -2958,7 +2966,7 @@ media_filesystem_check() {
 #echo_debug $LINENO done with case    
     sleep .5
     # now check filesystem endpoints vs partition
-    ##local FS_SIZE=$(media_filesystem_size $PARTITION)
+    local FS_SIZE=$(media_filesystem_size $PARTITION)
 #echo_debug "$LINENO FS_SIZE='$FS_SIZE'   "
     local PART_SIZE=$(media_partition_size $PARTITION)    
 #echo_debug $LINENO PART_SIZE_$PART_SIZE    
@@ -4155,7 +4163,7 @@ media_volume_verify(){
  
     # check the partition ---------
     media_partition_check $PARTITION $YESNO $VERBOSE
-    
+    if (( $? )); then return 1; fi
     
     # Verify the Filesystem --------
     #sleep 1
