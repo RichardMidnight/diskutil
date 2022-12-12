@@ -21,7 +21,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.69"  #2022-12-03
+VER="0.1.70"  #2022-12-03
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -870,6 +870,8 @@ media_device_checktarget(){
     local PART_COUNT=$(media_disk_partcount $DEVICE)
 
     
+#echo_debug $LINENO $DEVICE $TYPE $PART_COUNT   
+    
     if [[ -z $DEVICE ]]; then
         ui_msg_error $LINENO "Target '$DEVICE' is blank"
         return 1
@@ -883,10 +885,16 @@ media_device_checktarget(){
         fi    
     fi
 
+#echo_debug $LINENO $DEVICE $TYPE   $(media_device_type $DEVICE) $PART_COUNT
+
+
 	#if it is a miss-match and not a disk with no partitions
-    if [[ $(media_device_type $DEVICE) != $TYPE ]] && [[ $TYPE = disk ]] && [[ $PART_COUNT -eq 0 ]] ; then
-        ui_msg_error $LINENO "Device '$DEVICE' is not type '$TYPE'"
-        return 1  
+    if [[ $(media_device_type $DEVICE) != $TYPE ]] ; then
+#echo_debug $LINENO    
+        if [[ $TYPE = part ]] && [[ $PART_COUNT -ne 0 ]]; then
+            ui_msg_error $LINENO "Device '$DEVICE' is not type '$TYPE'"
+            return 1  
+        fi
     fi        
     
     
@@ -1353,20 +1361,21 @@ media_filesystem_used(){
 
 
 media_disk_partcount(){
-    # returns the number of paritions on a disk
-    local DEVICE=$1
+    # returns the number of the last partition on a disk
+    #local DEVICE=$1
+    local DISK=$(media_device_name $1)
     
-    sleep .25
+    #sleep .25
     # using parted
     # local last_part_num=$(sudo parted -ms "$DEVICE" unit B print |  tail -n 1 | cut -d ':' -f 1)
     
     # using fdisk
-    local PARTITION=$(sudo fdisk $DEVICE -l  | tail -1 | cut -d' ' -f1)
-    local last_part_num=$(media_device_partnum $PARTITION )
+    local LAST_PART=$(sudo fdisk $DISK -l  | tail -1 | cut -d' ' -f1)
+    local LAST_PART_NUM=$(media_device_partnum $LAST_PART )
     
     
-    if [[ $(is_number $last_part_num) = true ]]; then
-        echo $last_part_num
+    if [[ $(is_number $LAST_PART_NUM) = true ]]; then
+        echo $LAST_PART_NUM
     else
         echo 0
     fi
@@ -2185,7 +2194,7 @@ media_device_info (){
       
     #media_disk_listdisks -v   
 
-	media_device_checktarget $PARTITION part
+	media_device_checktarget $PARTITION   # don't put disk or part here, either is ok
 	if (( $? )); then return 1; fi
 
 
@@ -2938,7 +2947,7 @@ media_filesystem_check() {
             ;;
             
         xfs)
-            run_command "sudo xfs_repair -n $VERBOSE $PARTITION 2> /dev/null"  $LINENO  $VERBOSE
+            run_command "sudo xfs_repair -n $VERBOSE '$PARTITION' 2> /dev/null"  $LINENO  $VERBOSE
             if (( $? )); then 
                 if (( ! $(ui_yesno "VERIFY" "Errors found.  Try to fix" $YESNO) )); then
                     echo
@@ -2955,7 +2964,7 @@ media_filesystem_check() {
          #   media_volume_unmount $PARTITION
          #   sleep 1
             #run_command "sudo btrfs check $PARTITION " $LINENO $VERBOSE 
-            run_command "sudo btrfsck $PARTITION " $LINENO $VERBOSE    # from gparted
+            run_command "sudo btrfsck '$PARTITION' " $LINENO $VERBOSE    # from gparted
             if (( $? )) ; then return 1; fi
           #  echo_blue "sudo btrfs check $PARTITION"
           #  sudo btrfs check $PARTITION
@@ -3143,12 +3152,12 @@ media_filesystem_repair() {
             ;;
             
         xfs)
-            run_command "sudo xfs_repair $VERBOSE $PARTITION"  $LINENO  $VERBOSE
+            run_command "sudo xfs_repair $VERBOSE '$PARTITION'"  $LINENO  $VERBOSE
             if (( $? )) ; then return 1; fi
             ;;            
             
         btrfs)
-            run_command "sudo btrfs check --repair $PARTITION " $LINENO $VERBOSE
+            run_command "sudo btrfs check --repair '$PARTITION' " $LINENO $VERBOSE
         ;;        
             
         *)
@@ -3353,7 +3362,7 @@ media_filesystem_resize(){
             # must mount fs and use the mountpoint name
             media_volume_mount $PARTITION -y
             local MOUNT_POINT=$(df $PARTITION --output=target | grep ^/)
-            run_command "sudo xfs_growfs -d $NEW_SIZE $MOUNT_POINT"  $LINENO $VERBOSE     # grow to max size
+            run_command "sudo xfs_growfs -d $NEW_SIZE '$MOUNT_POINT' "  $LINENO $VERBOSE     # grow to max size
             sleep .5
             media_volume_unmount $PARTITION -y
             if (( $? )); then return 1; fi
@@ -3961,16 +3970,23 @@ media_volume_resize(){
     local FORCE
     getargs $*
     
+    
   #  echo_debug  $LINENO $FORCE
     ui_msg "RESIZE" "Resize Volume $PARTITION to $SIZE..." white
+
+#echo_debug $LINENO
     
     media_device_checktarget $PARTITION part
-    if (( $? )); then echo_debug $LINENO ; return 1; fi
+    if (( $? )); then return 1; fi
+   
+#echo_debug $LINENO
     
     if [[ $(media_partition_fs_type $PARTITION) = exfat ]]; then
         ui_msg_error $LINENO RESIZE "Cannot resize exfat filesystems.  Use Windows."
         return 1
     fi
+    
+#echo_debug $LINENO    
     
     if [[ $(media_partition_fs_type $PARTITION) = hfs* ]]; then
         ui_msg_error $LINENO RESIZE "Cannot resize hfs or hfsplus filesystems.  Use MAC OS."
@@ -3980,6 +3996,7 @@ media_volume_resize(){
     # unmount
     if  (( $(ui_yesno "REPAIR" "Unmount and resize $PARTITION" $YESNO) )); then
         media_volume_unmount $PARTITION -y
+        if (( $? )); then return 1; fi
     fi    
 
 #echo_debug $LINENO 
