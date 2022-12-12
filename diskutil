@@ -21,7 +21,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.64"  #2022-12-03
+VER="0.1.65"  #2022-12-03
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -173,6 +173,7 @@ media_filesystem_install(){
                 if (( $(ui_yesno "INSTALL FS" "Install support for $FS_TYPE" $YESNO) )); then
                     echo_white Installing vfat support ...
                     run_command "sudo $INSTALL dosfstools " $LINENO -v
+                    run_command "sudo $INSTALL mtools " $LINENO -v
                     
                     echo_white Installing fat-resize tool ...
                     run_command "sudo $INSTALL fatresize " $LINENO -v
@@ -185,10 +186,11 @@ media_filesystem_install(){
        #     if [[ -z $(env_which mkfs.exfat) ]] ; then
                 if (( $(ui_yesno "INSTALL FS" "Install support for $FS_TYPE" $YESNO) )); then
                     echo_white Installing exfat support ...
-                    run_command "sudo $INSTALL exfat-fuse " $LINENO -v
-                    run_command "sudo $INSTALL exfat-utils " $LINENO -v
+                    #run_command "sudo $INSTALL exfat-fuse " $LINENO -v
+                    #run_command "sudo $INSTALL exfat-utils " $LINENO -v
                     #sudo modprobe fuse 
                     #echo "fuse" | sudo tee -a /etc/modules
+                    run_command "sudo $INSTALL exfatprogs " $LINENO -v
                 fi
       #      fi
             ;;    
@@ -208,9 +210,11 @@ media_filesystem_install(){
             ;;
     
         ext2|ext3|ext4)
+			run_command "sudo $INSTALL e2fsprogs " $LINENO -v
             ;;  
             
         linux-swap|freespace)
+			run_command "sudo $INSTALL util-linux " $LINENO -v
             ;;
             
          hfs+|hfsplus)
@@ -226,7 +230,7 @@ media_filesystem_install(){
                 if (( $(ui_yesno "INSTALL FS" "Install support for $FS_TYPE" $YESNO) )); then
                     echo_white Installing hfs+ support...
                     run_command "sudo $INSTALL hfsprogs " $LINENO -v  # /sbin mkfs.hfsplus, mkfs.hfs
-                    run_command "sudo $INSTALL hfsplus " $LINENO -v   # /usr/bin  hpls, hpmount, hpumount, hpcd, hpcopy, hpfsck, hpmkdir, mppwd,hprm 
+                  #  run_command "sudo $INSTALL hfsplus " $LINENO -v   # /usr/bin  hpls, hpmount, hpumount, hpcd, hpcopy, hpfsck, hpmkdir, mppwd,hprm 
                 fi
             fi    
             ;;
@@ -235,10 +239,10 @@ media_filesystem_install(){
             if [[ -z $(env_which mkfs.hfs ) ]] || [[ -z $(env_which hls ) ]]; then 
                 if (( $(ui_yesno "INSTALL FS" "Install support for $FS_TYPE" $YESNO) )); then
                     echo_white Installing hfs support...
-                    run_command "sudo $INSTALL hfsprogs " $LINENO -v  # /sbin mkfs.hfsplus, mkfs.hfs
+               #     run_command "sudo $INSTALL hfsprogs " $LINENO -v  # /sbin mkfs.hfsplus, mkfs.hfs
                     run_command "sudo $INSTALL hfsutils " $LINENO -v    # /usr/bin/ hattrib, hcd, hcopy, hdel, hdir, hformat, hls, hmkdir, hmount, hpwd, hrename, hrmdir, humount, hvol
                     # dont know if this is needed...
-                    run_command "sudo $INSTALL hfsutils-tcltk " $LINENO -v  # /usr/bin/hfs
+                #    run_command "sudo $INSTALL hfsutils-tcltk " $LINENO -v  # /usr/bin/hfs
                 fi
             fi  
             ;;     
@@ -267,7 +271,8 @@ media_filesystem_install(){
         xfs)
 			#
             if (( $(ui_yesno "INSTALL FS" "Install support for $FS_TYPE" $YESNO) )); then
-                run_command "sudo apt install xfsprogs $YESNO" $LINENO
+                run_command "sudo apt install xfsprogs -y" $LINENO -v
+                run_command "sudo apt install xfsdump -y" $LINENO -v
             fi
 			;;
             
@@ -276,9 +281,9 @@ media_filesystem_install(){
             # https://www.thegeekdiary.com/how-to-check-btrfs-filesystem-usage-and-perform-balancing/
             # https://www.tecmint.com/create-btrfs-filesystem-in-linux/
             if (( $(ui_yesno "INSTALL FS" "Install support for $FS_TYPE" $YESNO) )); then
-               # run_command "sudo apt install btrfs-tools -y" $LINENO -v
+               # run_command "sudo apt install btrfs-tools -y" $LINENO -v  # old
                 run_command "sudo apt install btrfs-progs -y" $LINENO -v
-                run_command "sudo modprobe btrfs" $LINENO -v # enable the Kernel module for btrfs
+              #  run_command "sudo modprobe btrfs" $LINENO -v # enable the Kernel module for btrfs
             fi
             ;;
             
@@ -1257,6 +1262,24 @@ echo_debug $LINENO MP=$MOUNT_POINT
 }
     
     
+media_filesystem_size_alt(){
+	# mounts the fs, and uses lsblk to get fssize
+	local PARTITION=$(media_device_fullname $1)
+	local WAS_MOUNTED=$(media_filesystem_ismounted $PARTITION)
+	local FS_SIZE
+	
+	media_volume_mount $PARTITION -y  > /dev/null
+	
+	FS_SIZE=$(lsblk -n -b -f /dev/sda2 -o fssize)
+	
+	echo $FS_SIZE
+	
+	if (( $WAS_MOUNTED )); then
+		media_volume_unmount $PARTITION -y  > /dev/null
+	fi
+}    
+    
+    
 media_filesystem_size(){  
     # returns the size of a filesystem in bytes.
     
@@ -1283,7 +1306,7 @@ media_filesystem_size(){
             ;;
             
         exfat)
-            FS_SIZE=$(sudo fsck.exfat  $PARTITION | grep Volume | sed 's/  */ /g' | cut -d' ' -f3-4 | tr -d ' ')
+            FS_SIZE=$(sudo fsck.exfat $PARTITION -v | grep "volume size" | sed 's/  */ /g' | cut -d' ' -f3-4 | tr -d ' ')
             ;;     
             
         ntfs)
@@ -1331,18 +1354,9 @@ media_filesystem_size(){
                 sleep .5
             fi
             ;;
+            
         xfs|btrfs)
-            # with lsblk.  must be mounted
-            local WAS_MOUNTED=$(media_filesystem_ismounted $PARTITION)
-            media_volume_mount $PARTITION -y > /dev/null
-            sleep .5
-            local FS_SIZE=$(lsblk $PARTITION -n -b -o fssize)
-             if (( $WAS_MOUNTED )); then
-                media_volume_unmount $PARTITION -y > /dev/null
-                sleep .5
-            fi
-            #echo  $FS_SIZE
-        ;;    
+			;;    
             
             
         '') ;;   
@@ -1351,6 +1365,11 @@ media_filesystem_size(){
             ui_msg_error $LINENO "Filesystem '$FS_TYPE' not known" 
             ;;
     esac
+    
+    if [[ -z $FS_SIZE ]]; then
+		FS_SIZE=media_filesystem_size_alt $PARTITION
+    fi
+    
     echo $(bytes $FS_SIZE -b)
 }
 
@@ -1829,6 +1848,7 @@ media_disk_addpartition(){
    # fi 
     
     local BLOCK_SIZE=$(media_disk_blocksize $DEVICE)
+ BLOCK_SIZE=1048576   
     local DEVICE_SIZE=$(media_device_size $DEVICE)
 
     local LAST_PART_NUM=$(media_disk_partcount $DEVICE)
@@ -1842,6 +1862,14 @@ media_disk_addpartition(){
     local END_UNALIGNED
     local END
     local FS_TYPE
+    
+    
+    # align Beg
+    if [[ $(( $BEG % $BLOCK_SIZE )) -ne 0 ]]; then
+      BEG=$(( $BEG + BLOCK_SIZE ))
+      BEG=$(( $BEG / $BLOCK_SIZE * $BLOCK_SIZE ))
+    fi
+    
     
     # set FS_TYPE       
     if [[ $FORMAT = exfat ]]; then
@@ -1862,6 +1890,7 @@ media_disk_addpartition(){
         ui_msg_error $LINENO "Format root device not allowed"
         return 3
     fi
+	
 
 
     # set END
@@ -1899,6 +1928,8 @@ media_disk_addpartition(){
     fi    
 
 
+echo_debug $LINENO BS=$BLOCK_SIZE beg=$BEG rem=$(( $BEG % $BLOCK_SIZE ))
+
     # add units to BEG and END
     if [[ $(is_number $BEG) = true ]]; then
         BEG="$BEG"b
@@ -1920,6 +1951,8 @@ media_disk_addpartition(){
 
  #   ui_countdown 10 "ADD VOLUME"  # "Adding volume to '$DEVICE' in 10 seconds...\n\n"
  #   if (( $? )); then return 1; fi
+
+
 
 
 
@@ -2209,13 +2242,18 @@ media_device_info (){
 
 #echo_debug  $LINENO mounted1=$(media_filesystem_ismounted $PARTITION)
 
+	media_device_checktarget $PARTITION part
+	if (( $? )); then return 1; fi
+
 	echo
     media_disk_info $1 $2 $3 $4 $5
+    if (( $? )); then return 1; fi
     
 #echo_debug  $LINENO mounted2=$(media_filesystem_ismounted $PARTITION)    
     
     echo 
     media_filesystem_info $1 $2 $3 $4 $5
+    if (( $? )); then return 1; fi
     
 #echo_debug  $LINENO mounted3=$(media_filesystem_ismounted $PARTITION)    
     
@@ -2223,6 +2261,7 @@ media_device_info (){
         echo
         ui_msg "INFO" "Searching for Operating systems ..." white
         media_partition_os $PARTITION
+        if (( $? )); then return 1; fi
 #echo_debug  $LINENO mounted4=$(media_filesystem_ismounted $PARTITION)        
     fi
 }
@@ -3135,22 +3174,22 @@ media_filesystem_check() {
     sleep .5
     # now check filesystem endpoints vs partition
     local FS_SIZE=$(media_filesystem_size $PARTITION)
-#echo_debug $LINENO FS_SIZE=$FS_SIZE   
+echo_debug "$LINENO FS_SIZE='$FS_SIZE'   "
     local PART_SIZE=$(media_partition_size $PARTITION)    
 #echo_debug $LINENO PART_SIZE_$PART_SIZE    
-    local SIZE_AVAIL=$(( $PART_SIZE - $FS_SIZE ))
+    local BUFFER=$(( $PART_SIZE - $FS_SIZE ))
     
 
     
-    if [[ $SIZE_AVAIL -lt o ]]; then
+    if [[ $BUFFER -lt o ]]; then
         echo_debug $LINENO FS_SIZE=$FS_SIZE  $(bytes $FS_SIZE -h)
         echo_debug $LINENO PART_SIZE=$PART_SIZE  $(bytes $PART_SIZE -h)
-        echo_red "WARNING, filesystem is $(bytes $(( - $SIZE_AVAIL )) -h ) ($(( - $SIZE_AVAIL )) bytes) LARGER than the partition!"
-        echo_red You need to fix this.
-        echo "Consider running 'diskutil resizePart $PARTITION max -f'"
+        ui_msg "WARNING" "line $LINENO: Filesystem is $(bytes $(( - $BUFFER )) -h ) ($(( - $BUFFER )) bytes) LARGER than the partition!" red
+        ui_msg "WARNING" "You need to fix this." red
+        ui_msg "WARNING" "Consider running 'diskutil resizePart $PARTITION max -f'"
         return 1
-    elif [[ $SIZE_AVAIL -gt $(( 1024 * 1024)) ]]; then  
-        echo "Filesystem is '$(bytes $SIZE_AVAIL -h)' smaller than the partition."
+    elif [[ $BUFFER -gt $(( 1024 * 1024)) ]]; then  
+        echo "Filesystem is '$(bytes $BUFFER -h)' smaller than the partition."
     fi
     
     
@@ -3367,7 +3406,7 @@ media_filesystem_rename() {
             hfs)                run_command "sudo hlabel $PARTITION '$NAME'" $LINENO $VERBOSE  ;;   
             xfs)                run_command "sudo xfs_admin -L '$NAME' $PARTITION" $LINENO $VERBOSE ;;
             zfs)        ;;
-            btrfs)              run_command "mkfs.btrfs -L '$NAME' $PARTITION" $LINENO $VERBOSE;;
+            btrfs)              run_command "sudo btrfs filesystem label '$PARTITION' '$NAME' " $LINENO $VERBOSE;;
             *)                  echo "Unknown filesystem '$FS_TYPE'" ;;
         esac
     fi
@@ -4080,6 +4119,7 @@ media_volume_resize(){
     local PARTITION=$(media_device_fullname $1)
     local SIZE=${2:-max}
 
+	local WAS_MOUNTED=$(media_filesystem_ismounted $PARTITION)
     local FS_SIZE
     local NEWSIZE   
 
@@ -4103,6 +4143,11 @@ media_volume_resize(){
         ui_msg_error $LINENO RESIZE "Cannot resize hfs or hfsplus filesystems.  Use MAC OS."
         return 1
     fi
+    
+    # unmount
+    if  (( $(ui_yesno "REPAIR" "Unmount and resize $PARTITION" $YESNO) )); then
+        media_volume_unmount $PARTITION -y
+    fi    
 
 echo_debug $LINENO 
    
@@ -4723,7 +4768,7 @@ A physical volume refers to a drive or partition plus it's filesystem.
 Most commands DO NOT require an administrator or root user
 WARNING: Most destructive operations are not prompted
 
-This simplifies the use of: parted, lsblk, udisksctl mount, udisksctl unmount, udisksctl power-off, etc.
+This simplifies the use of: mkfs, ckfs, mount, unmount, eject, resize , etc.
 
 Usage:  diskutil [quiet] <verb> <options> [-y] [-v], where <verb> is as follows:
 
