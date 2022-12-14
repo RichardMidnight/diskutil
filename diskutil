@@ -937,7 +937,7 @@ media_device_checktarget(){
     if [[ $DEVICE_TYPE != $TYPE ]] ; then
 #echo_debug $LINENO    
         if [[ $TYPE = part ]] && [[ $PART_COUNT -ne 0 ]]; then
-            ui_msg_error $LINENO "Device '$DEVICE' 'DEVICE_TYPE' is not type '$TYPE'"
+            ui_msg_error $LINENO "Device '$DEVICE' '$DEVICE_TYPE' is not type '$TYPE'"
             return 1  
         fi
     fi        
@@ -2783,7 +2783,7 @@ media_partition_resize(){
         
         if [[ $FS_TYPE = ntfs ]]; then
     #    echo_debug $LINENO $PARTITION $FS_TYPE
-            ui_msg "RESIZE" "Fixing ntfs file system ..."
+            ui_msg "RESIZE" "Checking ntfs file system ..."
             sleep .5
             run_command "sudo ntfsfix -d $PARTITION" $LINENO $VERBOSE
             if (( $? )); then # run it again
@@ -4135,23 +4135,14 @@ media_volume_resize(){
     local FORCE
     getargs $*
     
+    ui_msg "RESIZE" "=====================================================================" white
     ui_msg "RESIZE" "Resize Volume $PARTITION from $(bytes $ORIGIONAL_SIZE -h) to $SIZE..." white
 
 
     media_device_checktarget $PARTITION part
     if (( $? )); then return 1; fi  
     
-    case $FS_TYPE in
-        exfat)
-            ui_msg_error $LINENO RESIZE "Cannot resize exfat filesystems.  Use Windows."
-            return 1
-            ;;
-        hfs*)
-            ui_msg_error $LINENO RESIZE "Cannot resize hfs or hfsplus filesystems.  Use MAC OS."
-            return 1
-            ;;
-    esac
-    
+ 
     ui_msg "RESIZE" "Calibrating..."
     
     local PART_MAX=$(media_partition_max $PARTITION)
@@ -4159,7 +4150,7 @@ media_volume_resize(){
     local FS_MIN=$(media_filesystem_min $PARTITION)
     
     
-echo_debug $LINENO    
+#echo_debug $LINENO    
     
     case $SIZE in
         min)    NEW_SIZE=min       
@@ -4178,7 +4169,26 @@ echo_debug $LINENO
                 ;;
     esac 
 
-echo_debug $LINENO new=$NEW_SIZE fs=$FS_MIN   
+#echo_debug $LINENO new=$NEW_SIZE fs=$FS_MIN   
+
+
+   case $FS_TYPE in
+        exfat)
+            ui_msg RESIZE "Cannot resize exfat filesystems.  Use Windows." red
+            return 1
+            ;;
+        hfs*)
+            ui_msg RESIZE "Cannot resize hfs or hfsplus filesystems.  Use MAC OS." red
+            return 1
+            ;;
+        xfs)
+            if [[ $NEW_SIZE -lt $ORIGIONAL_SIZE ]]; then
+                ui_msg RESIZE "Cannot shrink xfs filesystems. " red
+                return 1
+            fi
+            ;;
+    esac
+    
     
     # Check sizes...
     if [[ $NEW_SIZE -lt $FS_MIN ]]; then
