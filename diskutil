@@ -21,7 +21,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.72"  #2022-12-03
+VER="0.1.73"  #2022-12-03
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -838,10 +838,16 @@ media_device_size(){     # rename to DISK_SIZE ??
 
 media_device_type(){
     # returns disk or part
-    local DEVICE=$(media_device_fullname $1) 
-#echo_debug $LINENO $DEVICE    
-    lsblk $DEVICE -n -d -o TYPE
-#echo_debug $(lsblk $DEVICE -n -d -o TYPE )
+    local DEVICE=$(media_device_fullname $1)   
+    local DEVICE_TYPE=$(lsblk $DEVICE -n -d -o TYPE)
+    
+    if [[ -z $DEVICE_TYPE ]]; then
+        echo_debug $LINENO Retrying device_type ...
+        sleep .5
+        DEVICE_TYPE=$(lsblk $DEVICE -n -d -o TYPE)
+    fi
+    
+    echo $DEVICE_TYPE
 }
 
 
@@ -934,6 +940,12 @@ media_device_checktarget(){
 
 	#if it is a miss-match and not a disk with no partitions
     local DEVICE_TYPE=$(media_device_type $DEVICE)
+    if [[ -z $DEVICE_TYPE ]]; then
+        echo "Retrying to get Device_Type ($LINENO) ..."
+        sleep .25
+        local DEVICE_TYPE=$(media_device_type $DEVICE)
+    fi
+    
     if [[ $DEVICE_TYPE != $TYPE ]] ; then
 #echo_debug $LINENO    
         if [[ $TYPE = part ]] && [[ $PART_COUNT -ne 0 ]]; then
@@ -2496,12 +2508,37 @@ media_partition_fs_type(){
     # get FS_TYPE from parted
     FS_TYPE=$(sudo parted $DISK -m -s print | grep ^$PARTNUM: | cut -d: -f5 | tr -d ' ')
     
+    if [[ -z $FS_TYPE ]]; then
+        echo_debug $LINENO Retrying to get fs_type .
+        sleep .5
+        FS_TYPE=$(sudo parted $DISK -m -s print | grep ^$PARTNUM: | cut -d: -f5 | tr -d ' ')
+    fi
+    
     # if parted returned nothing... use lsblk
     if [[ -z $FS_TYPE ]]; then
+        echo_debug $LINENO Retrying to get fs_type ..
+        sleep .25
+        FS_TYPE=$(lsblk -n $PARTITION -o FSTYPE)
+    fi
+    
+    if [[ -z $FS_TYPE ]]; then
+        echo_debug $LINENO Retrying to get fs_type ...
+        sleep .5
+        FS_TYPE=$(lsblk -n $PARTITION -o FSTYPE)
+    fi
+    
+    if [[ -z $FS_TYPE ]]; then
+        echo_debug $LINENO Retrying to get fs_type ....
+        sleep .5
         FS_TYPE=$(lsblk -n $PARTITION -o FSTYPE)
     fi
    
     echo $FS_TYPE
+    
+    if [[ -z $FS_TYPE ]]; then
+        ui_msg_error $LINENO "$LINENO Failed to get fs_type ..."
+        return 1
+    fi
 }
 
 
@@ -2769,6 +2806,7 @@ media_partition_resize(){
         fi
 
         # put 'yes' at end of parted if reducing it
+echo_debug "$LINENO  '$SIZE'  '$PART_SIZE'   " 
         if [[ $SIZE -lt $PART_SIZE ]]; then
             YES=yes
         else
@@ -3767,24 +3805,30 @@ media_volume_mount(){
     fi   
 
     if (( $(ui_yesno "MOUNT" "Mount $PARTITION" "$YESNO") )); then
-        run_command "udisksctl mount -b $PARTITION" $LINENO $VERBOSE
+        sleep .25
+        #run_command "udisksctl mount -b $PARTITION" $LINENO $VERBOSE
+        ui_msg running udisksctl mount -b $PARTITION
+        udisksctl mount -b $PARTITION
             if (( $? )) ; then
-                sleep .5
-                ui_msg "MOUNT" "retrying..." red
-                run_command "udisksctl mount -b $PARTITION" $LINENO $VERBOSE
+                echo_debug $LINENO Retrying to mount .
+                sleep .5               
+                #run_command "udisksctl mount -b $PARTITION" $LINENO $VERBOSE
+                udisksctl mount -b $PARTITION
                 if (( $? )) ; then return 1; fi
             fi
-        #udisksctl mount -b $PARTITION
+
         
         # wait till it is mounted
         sleep .25
         if [[ ! -z "$(sudo df | grep ^$PARTITION)" ]]; then # it is mounted
             return
         fi
+        echo_debug $LINENO waiting for mount.
         sleep .5
         if [[ ! -z "$(sudo df | grep ^$PARTITION)" ]]; then # it is mounted
             return
         fi
+        echo_debug $LINENO waiting for mount..
         sleep 1
         if [[ ! -z "$(sudo df | grep ^$PARTITION)" ]]; then # it is mounted
             return
@@ -4201,7 +4245,7 @@ media_volume_resize(){
        # return 1
     fi
     
-    if  (( ! $(ui_yesno "RESIZE" "Resize '$PARTITION' ($FS_TYPE) from '$ORIGIONAL_SIZE' to about '$NEW_SIZE_H' ($NEW_SIZE)" $YESNO) )); then
+    if  (( ! $(ui_yesno "RESIZE" "Resize '$PARTITION' ($FS_TYPE) from '$(bytes $ORIGIONAL_SIZE -h)' to about '$NEW_SIZE_H' ($NEW_SIZE)" $YESNO) )); then
         echo Resize canceled.
         return 1
     fi
@@ -4223,7 +4267,7 @@ media_volume_resize(){
         fi
     fi    
     
-echo_debug $LINENO new=$NEW_SIZE  $(( $NEW_SIZE / 1024 / 1024 )) M 
+#echo_debug $LINENO new=$NEW_SIZE  $(( $NEW_SIZE / 1024 / 1024 )) M 
 
     # quit if still mounted
     if [[ $(media_filesystem_ismounted $PARTITION) = true ]]; then
@@ -4247,13 +4291,13 @@ echo_debug $LINENO new=$NEW_SIZE  $(( $NEW_SIZE / 1024 / 1024 )) M
                 echo_green Shrink...
                 echo
          #       ui_msg "RESIZE" "Shrink the FILESYSTEM to $NEW_SIZE_H..." white
-                media_filesystem_resize $PARTITION $NEW_SIZE $YESNO $VERBOSE
+                media_filesystem_resize $PARTITION $NEW_SIZE -y $VERBOSE
                 if (( $? )); then return 1; fi
                 
                 sleep 1
                 echo
          #       ui_msg "RESIZE" "Shrink PARTITION to fit FILESYSTEM..." white  
-                media_partition_resize $PARTITION min $YESNO $VERBOSE 
+                media_partition_resize $PARTITION min -y $VERBOSE 
                 if (( $? )); then return 1; fi
             fi
             
@@ -4262,7 +4306,7 @@ echo_debug $LINENO new=$NEW_SIZE  $(( $NEW_SIZE / 1024 / 1024 )) M
                 echo_green Grow...
                 echo
          #       ui_msg "RESIZE" "Grow the PARTTITION to $NEW_SIZE_H... " 
-                media_partition_resize $PARTITION $NEW_SIZE $YESNO $VERBOSE
+                media_partition_resize $PARTITION $NEW_SIZE -y $VERBOSE
                 if (( $? )); then return 1; fi
                 
                 sleep 1
@@ -4270,7 +4314,7 @@ echo_debug $LINENO new=$NEW_SIZE  $(( $NEW_SIZE / 1024 / 1024 )) M
          #       ui_msg "RESIZE" "Grow FILESYSTEM to fit PARTITION..."
                 #media_filesystem_resize_topart $PARTITION
               #  media_filesystem_resize $PARTITION $NEW_SIZE $YESNO $VERBOSE
-                media_filesystem_resize $PARTITION max $YESNO $VERBOSE
+                media_filesystem_resize $PARTITION max -y $VERBOSE
                 if (( $? )); then return 1; fi
             fi  
             ;;
