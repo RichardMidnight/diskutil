@@ -21,7 +21,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.71"  #2022-12-03
+VER="0.1.72"  #2022-12-03
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -2709,12 +2709,16 @@ media_partition_resize(){
         local BLOCK_SIZE=$(media_disk_blocksize $DEVICE)
         local END
         local FS_TYPE
+        local PART_SIZE=$(media_partition_size $PARTITION)
+        local YES   # used to auto answer parted when reducing size
  
         local YESNO
         local VERBOSE
         local FORCE
         getargs $*
 
+        media_device_checktarget $PARTITION part
+        if (( $? )); then return 1; fi
 
         # skip if fat32
         FS_TYPE=$(media_partition_fs_type $PARTITION)
@@ -2764,9 +2768,16 @@ media_partition_resize(){
             return 1
         fi
 
+        # put 'yes' at end of parted if reducing it
+        if [[ $SIZE -lt $PART_SIZE ]]; then
+            YES=yes
+        else
+            YES=
+        fi
+
         # resizes partition to a new end point
-        ui_msg "RESIZE" "Resizing Partition $PARTITION to $(bytes $SIZE -h) endpoint='$END'... " white
-        run_command "sudo parted $DEVICE unit B resizepart $PART_NUM $END" $LINENO -v   # -v verbose lets it ask y/n to continue
+        ui_msg "RESIZE" "Resizing Partition $PARTITION from $(bytes $PART_SIZE -h) to $(bytes $SIZE -h) endpoint='$END'... " white
+        run_command "sudo parted $DEVICE unit B resizepart $PART_NUM $END $YES" $LINENO -v   # -v verbose lets it ask y/n to continue
         if (( $? )); then return 1; fi
         
         
@@ -2782,7 +2793,7 @@ media_partition_resize(){
             fi
         fi
         
-        ui_msg "RESIZE" "$PARTITION partition resized to $( bytes $(( $END - $(media_partition_start $PARTITION) )) -h)" green
+        ui_msg "RESIZE" "$PARTITION partition resized from $(bytes $PART_SIZE -h) to $( bytes $(( $END - $(media_partition_start $PARTITION) )) -h)" green
 }
 
 
@@ -3397,8 +3408,16 @@ media_filesystem_resize(){
  #   if (( $? )); then return 1; fi   
    
     local CUR_SIZE=$(bytes $(media_device_size $PARTITION) -h)
-    ui_msg "RESIZE" "Resize  '$FS_TYPE' filesystem from $CUR_SIZE to '$SIZE' " white
-	sleep .5
+   # ui_msg "RESIZE" "Resize  '$FS_TYPE' filesystem from $CUR_SIZE to '$SIZE' " white
+	#sleep .5
+    
+    if  (( ! $(ui_yesno "RESIZE" "Resize Filesystem ($FS_TYPE) on '$PARTITION' from '$CUR_SIZE' to '$SIZE'" $YESNO) )); then
+        echo Resize canceled.
+        return 1
+    fi
+
+    
+    
 
     case $FS_TYPE in
     
@@ -4104,9 +4123,11 @@ media_volume_resize(){
     local PART_NUM=$(media_device_partnum $1)
     local PARTITION=$(media_device_fullname $1)
     local SIZE=${2:-max}
-
-	local WAS_MOUNTED=$(media_filesystem_ismounted $PARTITION)
-    local FS_SIZE
+    
+    local FS_TYPE=$(media_partition_fs_type $PARTITION)
+    local ORIGIONAL_SIZE=$(media_filesystem_size $PARTITION)
+	
+    #local FS_SIZE
     local NEWSIZE   
 
     local YESNO
@@ -4114,38 +4135,31 @@ media_volume_resize(){
     local FORCE
     getargs $*
     
-    
-  #  echo_debug  $LINENO $FORCE
-    ui_msg "RESIZE" "Resize Volume $PARTITION to $SIZE..." white
+    ui_msg "RESIZE" "Resize Volume $PARTITION from $(bytes $ORIGIONAL_SIZE -h) to $SIZE..." white
 
-#echo_debug $LINENO
-    
+
     media_device_checktarget $PARTITION part
-    if (( $? )); then return 1; fi
-   
-#echo_debug $LINENO
+    if (( $? )); then return 1; fi  
     
-    if [[ $(media_partition_fs_type $PARTITION) = exfat ]]; then
-        ui_msg_error $LINENO RESIZE "Cannot resize exfat filesystems.  Use Windows."
-        return 1
-    fi
+    case $FS_TYPE in
+        exfat)
+            ui_msg_error $LINENO RESIZE "Cannot resize exfat filesystems.  Use Windows."
+            return 1
+            ;;
+        hfs*)
+            ui_msg_error $LINENO RESIZE "Cannot resize hfs or hfsplus filesystems.  Use MAC OS."
+            return 1
+            ;;
+    esac
     
-#echo_debug $LINENO    
+    ui_msg "RESIZE" "Calibrating..."
     
-    if [[ $(media_partition_fs_type $PARTITION) = hfs* ]]; then
-        ui_msg_error $LINENO RESIZE "Cannot resize hfs or hfsplus filesystems.  Use MAC OS."
-        return 1
-    fi
+    local PART_MAX=$(media_partition_max $PARTITION)
+    local WAS_MOUNTED=$(media_filesystem_ismounted $PARTITION)
+    local FS_MIN=$(media_filesystem_min $PARTITION)
     
-    # unmount
-    if  (( $(ui_yesno "REPAIR" "Unmount and resize $PARTITION" $YESNO) )); then
-        media_volume_unmount $PARTITION -y
-        if (( $? )); then return 1; fi
-    fi    
-
-#echo_debug $LINENO 
-   
-    FS_SIZE=$(media_filesystem_size $PARTITION)
+    
+echo_debug $LINENO    
     
     case $SIZE in
         min)    NEW_SIZE=min       
@@ -4153,7 +4167,7 @@ media_volume_resize(){
                 ;;
         
         max)    
-                NEW_SIZE=$(( $(media_partition_max $PARTITION) - $(media_partition_start $PARTITION) )) 
+                NEW_SIZE=$(( $PART_MAX - $(media_partition_start $PARTITION) )) 
                 NEW_SIZE_H=$(bytes $NEW_SIZE -h)   
           #      echo_debug $LINENO max=$(media_partition_max $PARTITION) start=$(media_partition_start $PARTITION)
           #      echo_debug $LINENO $NEW_SIZE $NEW_SIZE_H
@@ -4162,20 +4176,11 @@ media_volume_resize(){
         *)      NEW_SIZE=$(bytes $SIZE -b)       
                 NEW_SIZE_H=$(bytes $NEW_SIZE -h)
                 ;;
-    esac
-#echo_debug $LINENO  newsize=$NEW_SIZE   
-	local FS_TYPE=$(media_partition_fs_type $PARTITION)
-    local VOLUME_SIZE=$(bytes $(media_filesystem_size $PARTITION) -h)
-    
-#echo_debug $LINENO 
-    
-    # do some simple checks here...
-    
-    local FS_MIN=$(media_filesystem_min $PARTITION)
-    local PART_MAX=$(media_partition_max $PARTITION)
+    esac 
 
-#echo_debug $LINENO new=$NEW_SIZE fs=$FS_MIN     
+echo_debug $LINENO new=$NEW_SIZE fs=$FS_MIN   
     
+    # Check sizes...
     if [[ $NEW_SIZE -lt $FS_MIN ]]; then
         ui_msg "RESIZE" "Minimum is $(bytes $FS_MIN -h)  New_size=$NEW_SIZE"
      #   return 1
@@ -4186,17 +4191,16 @@ media_volume_resize(){
        # return 1
     fi
     
-
-    if  (( ! $(ui_yesno "RESIZE" "Resize '$PARTITION' ($FS_TYPE) from '$VOLUME_SIZE' to about '$NEW_SIZE_H' ($NEW_SIZE)" $YESNO) )); then
+    if  (( ! $(ui_yesno "RESIZE" "Resize '$PARTITION' ($FS_TYPE) from '$ORIGIONAL_SIZE' to about '$NEW_SIZE_H' ($NEW_SIZE)" $YESNO) )); then
         echo Resize canceled.
-        return 0
+        return 1
     fi
-
-
-   # ui_countdown 10 "RESIZE PARTITION"  # "Resizing Partition '$(media_name $DEVICE)' in 10 seconds...\n\n"
-   # if (( $? )); then return 1; fi
    
+    # unmount
+    media_volume_unmount $PARTITION -y $VERBOSE 
+    if (( $? )); then return 1; fi 
    
+    # repair
     ui_msg "RESIZE" "Repairing filesystem before resize..." white
     media_filesystem_repair $PARTITION -y $VERBOSE
     if (( $? )); then
@@ -4204,24 +4208,21 @@ media_volume_resize(){
         if [[ $FORCE = -f ]]; then
             ui_countdown 10 
         else
-            echo exiting
+            echo exiting ...
             return 1
         fi
     fi    
     
 echo_debug $LINENO new=$NEW_SIZE  $(( $NEW_SIZE / 1024 / 1024 )) M 
-    
-    
-    media_volume_unmount $PARTITION -y  
-    #sleep 1
+
+    # quit if still mounted
     if [[ $(media_filesystem_ismounted $PARTITION) = true ]]; then
-        echo $PARTITION is mounted
+        echo $PARTITION is mounted. Cannot continue.
         return 1
     fi
     
-    
+
     case $FS_TYPE in
-    
         fat16|fat32|vfat)
             # dont need to resize the partition, just the filesystem
             echo
@@ -4232,14 +4233,14 @@ echo_debug $LINENO new=$NEW_SIZE  $(( $NEW_SIZE / 1024 / 1024 )) M
     
         *)
             # shrink
-            if [[ $NEW_SIZE -lt $FS_SIZE ]]; then
+            if [[ $NEW_SIZE -lt $ORIGIONAL_SIZE ]]; then
                 echo_green Shrink...
                 echo
          #       ui_msg "RESIZE" "Shrink the FILESYSTEM to $NEW_SIZE_H..." white
                 media_filesystem_resize $PARTITION $NEW_SIZE $YESNO $VERBOSE
                 if (( $? )); then return 1; fi
                 
-                sleep .5
+                sleep 1
                 echo
          #       ui_msg "RESIZE" "Shrink PARTITION to fit FILESYSTEM..." white  
                 media_partition_resize $PARTITION min $YESNO $VERBOSE 
@@ -4247,19 +4248,19 @@ echo_debug $LINENO new=$NEW_SIZE  $(( $NEW_SIZE / 1024 / 1024 )) M
             fi
             
             # grow
-            if [[ $NEW_SIZE -gt $FS_SIZE ]]; then
+            if [[ $NEW_SIZE -gt $ORIGIONAL_SIZE ]]; then
                 echo_green Grow...
                 echo
          #       ui_msg "RESIZE" "Grow the PARTTITION to $NEW_SIZE_H... " 
                 media_partition_resize $PARTITION $NEW_SIZE $YESNO $VERBOSE
                 if (( $? )); then return 1; fi
                 
-                sleep .5
+                sleep 1
                 echo
          #       ui_msg "RESIZE" "Grow FILESYSTEM to fit PARTITION..."
                 #media_filesystem_resize_topart $PARTITION
-                NEW_SIZE=max
-                media_filesystem_resize $PARTITION $NEW_SIZE $YESNO $VERBOSE
+              #  media_filesystem_resize $PARTITION $NEW_SIZE $YESNO $VERBOSE
+                media_filesystem_resize $PARTITION max $YESNO $VERBOSE
                 if (( $? )); then return 1; fi
             fi  
             ;;
@@ -4275,8 +4276,7 @@ echo_debug $LINENO new=$NEW_SIZE  $(( $NEW_SIZE / 1024 / 1024 )) M
     fi      
     
     echo
-    ui_msg "RESIZE" "Volume '$PARTITION' is now size '$(bytes $(media_partition_size $PARTITION) -h )'" green
-    
+    ui_msg "RESIZE" "Volume '$PARTITION' resized from '$(bytes $ORIGIONAL_SIZE -h)' to '$(bytes $(media_partition_size $PARTITION) -h )'" green
 }
 
  
