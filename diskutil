@@ -21,7 +21,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.74"  #2022-12-03
+VER="0.1.75"  #2022-12-03
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -55,9 +55,6 @@ echo_blue()         { (echo -e "${LTBLUE}$*${NC}") }
 echo_debug() { 
     echo_blue DEBUG:$* > /dev/stderr 
     }
-
-
-
 
 
 run_command(){
@@ -111,6 +108,47 @@ env_installer(){
     fi
 
     echo "$INSTALLER"
+}
+
+
+env_root_device() {    
+    # simpler
+    findmnt -no source /
+}
+
+
+env_root_disk() {
+	media_device_name $(env_root_device)
+}
+
+
+env_which () {
+    #fixes manjaro's which command 
+    local FILE=$1
+    
+    # if which not installed, try to install it
+    which which 1>/dev/null 2>/dev/null
+    if (( $? )); then
+        sudo apt install which -y
+        sudo pacman -S which --noconfirm
+        sudo dnf install which -y
+    fi
+    
+    # note: this may need to be a "sudo echo..." to set the admin path
+    # if /usr/sbin is not in path, add it
+  #if [[ "$STR" == *"$SUB"* ]]; then
+    if [[ "$PATH" != *"/usr/sbin"* ]]; then
+        PATH=$PATH:/usr/sbin
+    fi
+    
+    which $FILE 1>/dev/null 2>/dev/null
+    if (( $? )); then
+        #echo false
+        return 1
+    else
+        echo 1
+        return 0
+    fi       
 }
 
 
@@ -366,47 +404,6 @@ get_ver_to_int() {
 }
 
 
-env_root_device() {    
-    # simpler
-    findmnt -no source /
-}
-
-env_root_disk() {
-	media_device_name $(env_root_device)
-}
-
-
- 
-env_which () {
-    #fixes manjaro's which command 
-    local FILE=$1
-    
-    # if which not installed, try to install it
-    which which 1>/dev/null 2>/dev/null
-    if (( $? )); then
-        sudo apt install which -y
-        sudo pacman -S which --noconfirm
-        sudo dnf install which -y
-    fi
-    
-    # note: this may need to be a "sudo echo..." to set the admin path
-    # if /usr/sbin is not in path, add it
-  #if [[ "$STR" == *"$SUB"* ]]; then
-    if [[ "$PATH" != *"/usr/sbin"* ]]; then
-        PATH=$PATH:/usr/sbin
-    fi
-    
-    which $FILE 1>/dev/null 2>/dev/null
-    if (( $? )); then
-        #echo false
-        return 1
-    else
-        echo 1
-        return 0
-    fi       
-}
-
-
 is_number(){
     local NUM=$1
     
@@ -546,55 +543,6 @@ bytes(){
     fi
 }
 
-
-diskutil_update() {
-    INTERFACE=${1:-"cli"}
-    SUMMARY=${2:-"yes"}
-    local YES=${3:-"-n"}
-    local YESNO
-    getargs $*
-      
-    if [[ $SUMMARY = yes ]]; then
-        ui_echo "Checking for $PRODUCTNAME $SCRIPTVER updates..." white
-    fi
-      
-    local SERVER_VER=
-    wget https://raw.githubusercontent.com/RichardMidnight/diskutil/main/$SCRIPTNAME -O $SCRIPTNAME.tmp 2> /dev/null 
-    ES=$?
-    if (( $ES ));  then
-        #echo_if_cli "ERROR: Can't connect to server..."
-         echo_debug "ERROR: Can't connect to server..."
-        return $ES
-    fi    
-
-    # did we get the new version from the server?
-    if [[ -f $SCRIPTNAME.tmp ]]; then
-        SERVER_VER=$(bash $SCRIPTNAME.tmp -v)
-    else
-        return 1
-    fi
-
-    if [[ $(get_ver_to_int $SERVER_VER) -gt $(get_ver_to_int $VER) ]]; then
-
-        if (( $(ui_yesno "UPDATE AVAILABLE" "Update $PRODUCTNAME from '$VER' to '$SERVER_VER' " $YESNO) )); then
-            ui_echo "Updating $PRODUCTNAME to v $SERVER_VER..." white
-     #       sudo mv $SCRIPTNAME.tmp /usr/local/bin/$SCRIPTNAME
-     #       sudo chmod +x /usr/local/bin/$SCRIPTNAME
-     
-            sudo mv $SCRIPTNAME.tmp $SCRIPTNAME
-            echo "$($SCRIPTNAME -v) installed. Press any key to exit... "
-            read -s -n 1
-            echo
-            echo You can restart $SCRIPTNAME now
-            exit 0
-        fi
-    else  
-        rm $SCRIPTNAME.tmp
-        if [[ $SUMMARY = yes ]]; then
-            ui_msg UPDATE "~ $PRODUCTNAME $VER is up to date.  Server ver is '$SERVER_VER' " "" "" log
-        fi
-    fi
-}
 
 
 ########################################################################
@@ -1694,7 +1642,7 @@ media_disk_test () {
         for PART in $PARTITION_LIST; do
 			echo
 			sleep .5
-			media_filesystem_check $DISK$PART -y $VERBOSE
+			media_filesystem_check $DISK$PART $YESNO $VERBOSE
             (( ! $? )) && do_beep_up || do_beep_down  
        done
     fi
@@ -4621,7 +4569,78 @@ menu() {
 }
 
 
-disk_util_terminology(){
+# diskutil finctions ###################################################
+
+diskutil_install(){
+    
+    local YESNO
+    local VERBOSE
+    getargs $*
+    
+    
+    if (( $(ui_yesno "INSTALL" "Install diskutil" $YESNO) )); then
+    
+        # Install the CLI script
+        sudo cp --backup=numbered $SCRIPTNAME /usr/local/bin/$SCRIPTNAME
+        sudo chmod +x /usr/local/bin/$SCRIPTNAME
+        echo Installed ver=$(/usr/local/bin/$SCRIPTNAME -v)
+    
+    fi
+    
+}
+
+
+diskutil_update() {
+    INTERFACE=${1:-"cli"}
+    SUMMARY=${2:-"yes"}
+    local YES=${3:-"-n"}
+    local YESNO
+    getargs $*
+      
+    if [[ $SUMMARY = yes ]]; then
+        ui_echo "Checking for $PRODUCTNAME $SCRIPTVER updates..." white
+    fi
+      
+    local SERVER_VER=
+    wget https://raw.githubusercontent.com/RichardMidnight/diskutil/main/$SCRIPTNAME -O $SCRIPTNAME.tmp 2> /dev/null 
+    ES=$?
+    if (( $ES ));  then
+        #echo_if_cli "ERROR: Can't connect to server..."
+         echo_debug "ERROR: Can't connect to server..."
+        return $ES
+    fi    
+
+    # did we get the new version from the server?
+    if [[ -f $SCRIPTNAME.tmp ]]; then
+        SERVER_VER=$(bash $SCRIPTNAME.tmp -v)
+    else
+        return 1
+    fi
+
+    if [[ $(get_ver_to_int $SERVER_VER) -gt $(get_ver_to_int $VER) ]]; then
+
+        if (( $(ui_yesno "UPDATE AVAILABLE" "Update $PRODUCTNAME from '$VER' to '$SERVER_VER' " $YESNO) )); then
+            ui_echo "Updating $PRODUCTNAME to v $SERVER_VER..." white
+     #       sudo mv $SCRIPTNAME.tmp /usr/local/bin/$SCRIPTNAME
+     #       sudo chmod +x /usr/local/bin/$SCRIPTNAME
+     
+            sudo mv $SCRIPTNAME.tmp $SCRIPTNAME
+            echo "$($SCRIPTNAME -v) installed. Press any key to exit... "
+            read -s -n 1
+            echo
+            echo You can restart $SCRIPTNAME now
+            exit 0
+        fi
+    else  
+        rm $SCRIPTNAME.tmp
+        if [[ $SUMMARY = yes ]]; then
+            ui_msg UPDATE "~ $PRODUCTNAME $VER is up to date.  Server ver is '$SERVER_VER' " "" "" log
+        fi
+    fi
+}
+
+
+diskutil_terminology(){
 echo "diskutil terminology:
 
 Device / block device
@@ -4641,9 +4660,7 @@ unmount
 }
 
 
-
-
-disk_utility_help(){
+diskutil_help(){
   
     local YESNO
     local VERBOSE
@@ -4747,13 +4764,13 @@ case $CMD in
         ;;
         
     -h|--help)
-        disk_utility_help -v
+        diskutil_help -v
         echo
         media_disk_listdisks -v
         exit
         ;;
         
-    terminology)    disk_util_terminology ;;    
+    terminology)    diskutil_terminology ;;    
         
     list)
         run_command "lsblk $(media_device_name $2) -o name,type,size,pttype,fstype,label,fsuse%,mountpoint" $LINENO -v
@@ -4829,6 +4846,8 @@ case $CMD in
             media_filesystem_install $2 $3
         fi    
         ;;
+        
+    install)                diskutil_install $2 $3 ;;
             
     clone)
         SOURCE=$1
@@ -4848,7 +4867,7 @@ case $CMD in
     menu)           menu ;; 
                 
     *)
-        disk_utility_help
+        diskutil_help
         echo
         media_disk_listdisks -v
         #error $LINENO "Command '$CMD' not recognized"
