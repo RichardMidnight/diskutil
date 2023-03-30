@@ -199,6 +199,59 @@ sudo zypper install smartmontools
 }
 
 
+
+media_filesystem_status(){
+    # display each supported filesystem and if it is installed
+    # fat16 fat32 exfat ntfs ext2 ext3 ext4 linux-swap freespace hfs+ hfs xfs btrfs
+    
+    for FS in $FILESYSTEMS; do
+        case $FS in
+            fat16|fat32|vfat)
+                if [[ -z $(env_which mkfs.vfat) ]] ; then
+                   echo $FS not installed
+                else
+                   echo $FS installed
+                fi
+                ;;
+                   
+            exfat|ntfs|ext2|ext3|ext4|xfs|btrfs|hfs)
+                if [[ -z $(env_which mkfs.$FS) ]] ; then
+                   echo $FS not installed
+                else
+                   echo $FS installed
+                fi
+                ;;   
+                
+            hfs+)
+                if [[ -z $(env_which mkfs.hfsplus) ]] ; then
+                   echo $FS not installed
+                else
+                   echo $FS installed
+                fi
+                ;;     
+                
+            linux-swap)
+                if [[ -z $(env_which mkswap) ]] ; then
+                   echo $FS not installed
+                else
+                   echo $FS installed
+                fi
+                ;;                     
+            
+            freespace)
+                echo $FS installed
+                ;;
+                
+            *)
+                echo $FS status unknown
+                ;;
+        esac
+    done
+    
+    
+}
+
+
 media_filesystem_install(){
     # installs support for a filesystem
     
@@ -1733,7 +1786,7 @@ media_disk_verify() {
         if (( $? )); then return 1; fi
     fi
     
-    echo "The disk '$DISK' apears to be OK"
+    echo "The disk '$DISK' appears to be OK"
     
     
   #  if (( ! $(ui_yesno "Verify partitions" "verify all $PARTCOUNT partitons on '$DISK' " "$YESNO") )); then 
@@ -4784,7 +4837,8 @@ case $CMD in
 
         ;;
     
-    listFilesystems)        echo "Supported file systems: $FILESYSTEMS "    ;;
+    listFilesystems)        #echo "Supported file systems: $FILESYSTEMS "    ;;
+        media_filesystem_status  ;;
 
     mount)                  media_volume_mount $2 $3 $4 -y ;;  
     umount|unmount)         media_volume_unmount $2 $3 $4 -y ;;  
