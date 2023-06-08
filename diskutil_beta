@@ -21,7 +21,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.77"  #2023-06-05
+VER="0.1.78"  #2023-06-05
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -765,7 +765,7 @@ media_device_fullname(){
     local DEVICE=$1
     
     if [ -z $DEVICE ]; then
-        echo_debug $LINENO No device specified.
+        echo_debug line $LINENO No device specified.
         return 1
     fi
     
@@ -925,7 +925,6 @@ media_device_checktarget(){
             return 1  
         fi
     fi        
-    
     
     
     # Stop if dev is the root device
@@ -1703,14 +1702,17 @@ media_disk_info(){
     local VERBOSE
     getargs $*
     
+    
     echo_white "Disk and Partition info '$DISK'"
     run_command "sudo parted $DISK print free" $LINENO -v
     
     echo "Block size: $(media_disk_blocksize $DISK)B "
     
-    echo
-    echo_white Disk topology
-    run_command "lsblk -t $DISK" $LINENO $VERBOSE
+    if [[ $VERBOSE = -v ]]; then
+        echo
+        echo_white Disk topology
+        run_command "lsblk -t $DISK" $LINENO $VERBOSE
+    fi
 
     if [[ $VERBOSE = -v ]]; then
         echo
@@ -1737,14 +1739,14 @@ media_disk_verify() {
     
     local YESNO
     local VERBOSE
-    getargs $*
+    getargs $* 
      
     echo_white "Verify Disk '$DISK' ..." 
      
     # checking that $DISK exists
     media_device_checktarget $DISK disk 
     if (( $? )); then echo_debug $LINENO ; return 1; fi
-    echo "Disk $DISK found."
+    echo "Disk $DISK found"
     
     
     #echo -n "Checking Partition Table Type ..."
@@ -1761,18 +1763,20 @@ media_disk_verify() {
   #  echo -n "Checking Partition Table ..."
   #  echo_green $(media_disk_pt_type $DISK) OK
   #  if (( $? )); then return 1; fi
-    echo
+    #echo
     if [[ $VERBOSE = -v ]]; then
         run_command "sudo parted $DISK print free" $LINENO $VERBOSE
         if (( $? )); then return 1; fi
     fi
     
-    echo "The disk '$DISK' apears to be OK"
+    echo "The partition table on disk '$DISK' appears to be OK"
     
     
-  #  if (( ! $(ui_yesno "Verify partitions" "verify all $PARTCOUNT partitons on '$DISK' " "$YESNO") )); then 
-  #      media_partition_check $DISK   
-  #  fi
+    if (( $(ui_yesno "Verify partitions" "Verify all $PART_COUNT partitons on '$DISK' " "$YESNO") )); then 
+       for PART in $(seq 1 $PART_COUNT); do
+           media_filesystem_check $DISK$PART $VERBOSE
+       done
+    fi
 }
 
 
@@ -1796,8 +1800,9 @@ media_disk_repair() {
     media_disk_verify $1 $YESNO $VERBOSE
     if (( $? )); then return 1; fi
     
-    echo "no changes made"
-    echo "If you need to repair a partition, try using 'testdisk' "
+    echo
+    echo "No changes made"
+    echo "If you need to repair a partition table or a partition, try using 'testdisk' "
 }
 
 
@@ -2484,7 +2489,7 @@ retire_maybe_media_partition_pt_type(){
 media_partition_fs_type(){
     # returns the filesystem type from a volume (with fallback)
     
-echo_debug "$LINENO RUNNING GET FS_TYPE ====================== ...    "
+#echo_debug "$LINENO RUNNING GET FS_TYPE ====================== ...    "
     
     local PARTITION=$(media_device_fullname $1)
     local DISK=$(media_device_name $1)
@@ -2583,6 +2588,8 @@ media_partition_format(){
     fi
     
     local SIZE=$(bytes $(media_partition_size $PARTITION) -h)
+
+# note: this will fail for a new partition that has never been formatted.
     local FS_TYPE=$(media_partition_fs_type $PARTITION)
 
 
@@ -2985,7 +2992,6 @@ media_filesystem_check() {
     if (( $? )); then echo_debug $LINENO ; return 1; fi
 
 
-#echo_debug "$LINENO fs_type=$FS_TYPE"  
     if [[ -z $FS_TYPE ]]; then
         FS_TYPE=$(media_partition_fs_type $PARTITION)
     fi
@@ -2995,15 +3001,11 @@ media_filesystem_check() {
     media_volume_unmount $PARTITION $YESNO
 
 
-#echo_debug " $LINENO mounted='$(media_filesystem_ismounted $PARTITION)' was=$WAS_MOUNTED"
-
-
     if (( $(media_filesystem_ismounted $PARTITION) )); then
         ui_msg "CHECK" "Volume $PARTITION is mounted.  Cannot verify it. line $LINENO"
         return 1
     fi
 
-	#sleep .5
     
     case $FS_TYPE in
     
@@ -3023,7 +3025,6 @@ media_filesystem_check() {
             fi
             ;;
             
-            
         exfat)
             #echo "Checking exfat filesystem..."
             run_command "sudo fsck.exfat -n '$PARTITION'" $LINENO $VERBOSE # -n is no-op
@@ -3039,7 +3040,6 @@ media_filesystem_check() {
                 if (( $? )) ; then return 1; fi
             fi
             ;;
-            
             
         ntfs)
             #echo " - Checking filesystem..."
@@ -3063,7 +3063,6 @@ media_filesystem_check() {
             fi    
             ;;
             
-        
         ext2|ext3|ext4)
             #echo "Checking ext_ filesystem"
             run_command "sudo e2fsck $VERBOSE -fn $PARTITION"  $LINENO  $VERBOSE
@@ -3080,7 +3079,6 @@ media_filesystem_check() {
                 if (( $? )) ; then return 1; fi
             fi         
             ;;
-            
  
         "") #error $LINENO "No filesystem found.. continuing."
             if  (( $(ui_yesno "CHECK FILESYSTEM" "No filesystem found. Continue?" ) )); then
@@ -3177,7 +3175,6 @@ media_filesystem_check() {
     elif [[ $BUFFER -gt $(( 1024 * 1024)) ]]; then  
         echo "Filesystem is '$(bytes $BUFFER -h)' smaller than the partition."
     fi
-    
     
     
     if (( $WAS_MOUNTED )); then
@@ -4345,10 +4342,12 @@ getargs(){
 #echo_debug "$LINENO testing arg '$ARG'"    
         case $ARG in
             -y|--yes)           YESNO=-y    ;;
+            -n)                 YESNO=-n  
+                                RW=-n       ;;    # for badblocks
             -v|--verbose)       VERBOSE=-v  ;;
      #       -q)                 QUIET=-q    ;;
             -f|--force)         FORCE=-f    ;;
-            -n)                 RW=-n       ;;    # for badblocks
+ 
             *)
                 if [[ "$FILESYSTEMS" = *"$ARG"* ]]; then
                     FS_TYPE=$ARG
@@ -4377,67 +4376,29 @@ media_volume_verify(){
     local VERBOSE
   #  local QUIET
     getargs $*
-
     
     echo_white "Verify volume '$PARTITION' "
  
     media_device_checktarget $PARTITION part
     if (( $? )); then echo_debug $LINENO ; return 1; fi
  
- 
     #  Verify Disk ..... 
-    echo  
-    echo_white "Verify step 1 "
-    media_disk_verify $DISK $YESNO $VERBOSE 
-    if (( $? )); then return 1 ; fi
-    
-    
-    # Verify Partition table ........
-    echo
-    echo_white "Verify step 2: \nVerify Partition '$PARTITION' ..."
-    sleep .5
-    if [[ ! -e $PARTITION ]]; then
-        ui_msg_error $LINENO "Partition '$PARTITION' not found."  
-        return 1
-    else
-        echo "Partition '$PARTITION' found."
-    fi   
-    
-  #  echo -n "Checking 'Partition Table Type'..."
-  #  local PT_TYPE=$(media_disk_pt_type $DISK)
-  #  case $PT_TYPE in
-  #      msdos|gpt|dos|loop)      echo "Partition table $PT_TYPE found"   ;;
-  #      *)                  ui_msg_error $LINENO "Unknown Partition-Table Type'$PT_TYPE'" ;;
-  #  esac 
-    
-  #  echo -n "Looking for partitions..."
-  #  local PARTITION_COUNT=$(media_disk_partcount $DISK)
-  #  if [[ $PARTITION_COUNT -eq 0 ]]; then
-  #      ui_msg_warning $LINENO "No partitions found."
-  #  else
-  #      echo "'$PARTITION_COUNT' partitions found."
-  #  fi
-
- 
-    # check the partition ---------
- #   media_partition_check $PARTITION $YESNO $VERBOSE
- #   if (( $? )); then return 1; fi
+    echo_white Verify Step 1
+    media_disk_verify $DISK -n $VERBOSE 
+    if (( $? )); then echo_debug $LINENO: Error in partition map; return 1; fi
     
     # Verify the Filesystem --------
-    #sleep 1
-    echo
-    echo_white Verify step 3
+    echo_white Verify Step 2
     media_filesystem_check $PARTITION $YESNO $VERBOSE
     if (( $? )); then return 1; fi
     
-    #echo
     echo_green Finished Volume Verification on $PARTITION.
-    
 }
 
 
 media_volume_repair(){
     # repairs a volume
+    local DISK=$(media_device_name $1)
     local PARTITION=$(media_device_fullname $1)
 
     if [[ -z $1 ]]; then
@@ -4452,20 +4413,18 @@ media_volume_repair(){
     local VERBOSE
    # local QUIET
     getargs $*
-
-echo_debug $LINENO    
+ 
     # check that device exists
     media_device_checktarget $PARTITION part
     if (( $? )); then return 1; fi
-
-echo_debug $LINENO     
-    # check that partition table exists
-    # check that partition table is OK
     
-    # check that there is a filesystem
-    
+    #check 
+    echo_white Step 1 - Verify the disk
+    media_disk_verify $DISK -n $VERBOSE
+    if (( $? )); then echo_debug $LINENO: Error in partition map; return 1; fi
     
     # repair the filesystem
+    echo_white Step 2 - Repair the volume
     media_filesystem_repair $PARTITION $YESNO $VERBOSE
     if (( $? )); then return 1; fi
 }
@@ -4816,28 +4775,23 @@ case $CMD in
         echo
         ;;        
 
-    info*)          media_device_info $2 $3 $4 $5 
-
-        ;;
-    
-  #  listFilesystems)        echo "Supported file systems: $FILESYSTEMS "    ;;
-  
+    info*)                  media_device_info ${@:2};;  
     listFilesystems)        env_list_filesystems ;;
 
-    mount)                  media_volume_mount $2 $3 $4 -y ;;  
-    umount|unmount)         media_volume_unmount $2 $3 $4 -y ;;  
-    mountDisk)              media_disk_mount $2 $3 $4;;
-    umountDisk|unmountDisk) media_disk_unmount $2 $3 $4;;
-    eject)                  media_disk_eject $2 $3 $4;;
+    mount)                  media_volume_mount ${@:2} -y ;;  
+    umount|unmount)         media_volume_unmount ${@:2} -y ;;  
+    mountDisk)              media_disk_mount ${@:2};;
+    umountDisk|unmountDisk) media_disk_unmount ${@:2};;
+    eject)                  media_disk_eject ${@:2};;
 
     rename)    				media_filesystem_rename $2 $3 $4 $5;;
     
-    verify)		            media_volume_verify $2 $3 $4;;
-    repair)     	        media_volume_repair $2 $3 $4 ;;
-    verifyDisk)             media_disk_verify $2 $3;; 
-    repairDisk)             media_disk_repair $2 $3;; 
+    verify)		            media_volume_verify ${@:2};;
+    repair)     	        media_volume_repair ${@:2};;
+    verifyDisk)             media_disk_verify ${@:2};; 
+    repairDisk)             media_disk_repair ${@:2};; 
     
-    resize)           		media_volume_resize $2 $3 $4 $5;;
+    resize)           		media_volume_resize ${@:2};;
 
 # destructive verbs
     
