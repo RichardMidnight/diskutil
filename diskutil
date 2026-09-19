@@ -1091,13 +1091,18 @@ media_disk_blocksize(){
     sudo blockdev --getbsz $DISK
 }
 
+media_real_disks(){
+    # returns the names of real physical disks only
+    # excludes loop, zram and other virtual devices
+    lsblk -n -d -o name,TYPE 2>/dev/null | awk '$2 == "disk" && $1 !~ /^(zram|loop)/ {print $1}'
+}
+
+
 media_disk_listdisks(){
     # list of disks available to the system
     local DISK
-    #local DISKS=$(lsblk -n -d -e11 -o name)   # -e11 excludes cdrom
-    # only TYPE=disk: excludes loop, ram, rom, part, etc.
-    local DISKS=$(lsblk -n -d -o name,TYPE | awk '$2 == "disk" {print $1}')
-#echo_debug $LINENO $DISKS
+    local DISKS=$(media_real_disks)
+    #echo_debug $LINENO $DISKS
     local YESNO
     local VERBOSE
     getargs $*
@@ -1107,9 +1112,9 @@ media_disk_listdisks(){
     fi
 
     for DISK in $DISKS; do
-#echo_debug $LINENO  $DISK
+        #echo_debug $LINENO $DISK
         echo $(media_disk_friendlyname $DISK)
-#echo_debug $LINENO  $DISK
+        #echo_debug $LINENO $DISK
     done
 }
 
@@ -1123,8 +1128,7 @@ media_disk_list(){
     if [[ -n $1 ]]; then
         DISKS=$(media_device_name $1)
     else
-        # only real disks: no loop, zram or other virtual devices
-        DISKS=$(lsblk -n -d -o name,TYPE | awk '$2 == "disk" && $1 !~ /^(zram|loop)/ {print $1}')
+        DISKS=$(media_real_disks)
     fi
 
     local DISK
