@@ -76,6 +76,9 @@ run_command(){
 
     echo -n "$PRODUCTNAME: running: "
     ui_echo "$CMD" blue
+    # Intentional: eval re-parses $CMD and $OUTPUT (e.g. a redirection like "1> /dev/null").
+    # Quoting would change how it expands; leave unquoted.
+    # shellcheck disable=SC2086
     eval $CMD $OUTPUT
     EC=$?
     if (( $EC )); then
@@ -92,6 +95,9 @@ file_path(){
 
 
 env_installer(){
+    # Note: returns a MULTI-WORD command (e.g. "apt install -y") that is intended
+    # to word-split at the call site. Do NOT quote these call sites (sudo $INSTALL ...)
+    # -- quoting would treat the whole string as one program name and break.
     local INSTALLER=
 
     if [ -f /usr/bin/apt ]; then             # debian
@@ -112,7 +118,9 @@ env_installer(){
 
 env_removal(){
     # returns the package removal command for this distro
-
+    # Note: returns a MULTI-WORD command (e.g. "apt remove -y") intended to word-split
+    # at the call site. Do NOT quote the call sites (sudo $REMOVE ...) -- same as
+    # env_installer above.
     local REMOVER=
 
     if [ -f /usr/bin/apt ]; then             # debian
@@ -203,6 +211,9 @@ env_install_tools() {
     for TOOL in $REQUIRED_TOOLS; do
 
     if [[ -z $(env_which $TOOL) ]] ; then
+        # $INSTALL is a multi-word command string from env_installer (e.g. "apt install -y");
+        # it must word-split into program + flags. Intentionally unquoted (do not quote).
+        # shellcheck disable=SC2086
         case $TOOL in
 
         udisksctl)
@@ -594,7 +605,7 @@ info_validate_num(){
 
 
     if (( $MAX )); then
-        if [ $NUM -gt $MAX ]; then
+        if [ "$NUM" -gt "$MAX" ]; then
             ((ERRORS++))
             ui_msg_error $LINENO "Variable '$VAR' '$NUM' too big"
         fi
@@ -736,7 +747,7 @@ ui_log(){
     # usage ui_log "message"
     INFO=$*
 
-    INFO=$(echo $INFO | sed 's/\\n/ -/g')  #change newline for ~
+    INFO=$(echo "$INFO" | sed 's/\\n/ -/g')  #change newline for ~
 
     if [[ ! -d $(file_path $LOG_FILE) ]]; then
         mkdir -p $(file_path $LOG_FILE)
@@ -1541,7 +1552,7 @@ media_filesystem_size(){
         ext2|ext3|ext4)
             blockcount="$(sudo tune2fs -l "$PARTITION" | grep '^Block count:' | tr -d ' ' | cut -d ':' -f 2)"
             blocksize="$(sudo tune2fs -l "$PARTITION" | grep '^Block size:' | tr -d ' ' | cut -d ':' -f 2)"
-            if [[ $(is_number $currentsize) ]] && [[ $(is_number $blocksize) ]]; then
+            if [[ $(is_number "$blockcount") = true ]] && [[ $(is_number "$blocksize") = true ]]; then
                 FS_SIZE=$(($blockcount * $blocksize))
             fi
             ;;
