@@ -13,7 +13,7 @@ Simplifies managing volumes with popular filesystem.
 
 Simplifies mounting, unmounting, verifying, repairing, renaming, resizing, erasing, adding, and deleting volumes.
 
-Supported filesystems:  ext2, ext3, ext4, fat16, fat32, exfat, ntfs, hfs+
+Supported filesystems:  fat16, fat32, exfat, ntfs, ext2, ext3, ext4, hfs+, hfs, xfs, btrfs, linux-swap
 
 
 # Install
@@ -25,9 +25,9 @@ Paste or type this into a terminal window:
     bash diskutil
  
  
-Beta version:
+Beta version (from the dev branch):
 
-    wget https://raw.githubusercontent.com/RichardMidnight/diskutil/main/diskutil_beta -O diskutil
+    wget https://raw.githubusercontent.com/RichardMidnight/diskutil/dev/diskutil -O diskutil
     bash diskutil
     
 
