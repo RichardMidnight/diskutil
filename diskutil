@@ -914,7 +914,7 @@ media_device_partnum(){
   #  local PARTNUM=$(echo $1 | sed 's/.*[^1-9]\(.*\)$/\1/')
     local PARTNUM=$(echo $1 | sed 's/.*[^0-9]\(.*\)$/\1/')
 
-    if ! [[ $(is_number $PARTNUM) ]]; then
+    if [[ $(is_number "$PARTNUM") != true ]]; then
         echo_debug "$LINENO '$PARTNUM' not a number"
         return 1
     fi
@@ -1402,7 +1402,7 @@ echo_debug $LINENO $FS_TYPE
             if ! (( $MIN_SIZE )); then
                 MIN_SIZE=0
             fi
-            if [ $(is_number "$MIN_SIZE") ] && [ $(is_number "$BLOCKSIZE") ]; then
+            if [[ $(is_number "$MIN_SIZE") = true ]] && [[ $(is_number "$BLOCKSIZE") = true ]]; then
                 FS_MIN=$(($MIN_SIZE * $BLOCKSIZE))
             fi
             ;;
