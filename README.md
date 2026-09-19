@@ -21,14 +21,8 @@ Supported filesystems:  fat16, fat32, exfat, ntfs, ext2, ext3, ext4, hfs+, hfs, 
 Paste or type this into a terminal window:
 
     
-    wget https://raw.githubusercontent.com/RichardMidnight/diskutil/main/diskutil -O diskutil
-    bash diskutil
- 
- 
-Beta version (from the dev branch):
-
-    wget https://raw.githubusercontent.com/RichardMidnight/diskutil/dev/diskutil -O diskutil
-    bash diskutil
+     wget https://raw.githubusercontent.com/RichardMidnight/diskutil/main/diskutil -O diskutil
+     bash diskutil
     
 
 
