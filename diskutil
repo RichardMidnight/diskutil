@@ -2418,10 +2418,7 @@ media_disk_format(){
 
 media_device_info (){
     # returns information about a device.
-    
-    local PARTITION=$(media_device_fullname $1)
-       
-    
+
     # if no device specified...
     if [[ -z $1 ]]; then
         echo "Usage: diskutil info [disk | volume] [-v]"
@@ -2429,11 +2426,14 @@ media_device_info (){
         #run_command "lsblk -o name,type,size,fstype,fssize,fsuse%,label,vendor,model,serial" $LINENO -v
        # run_command "lsblk -f" $LINENO -v
         ui_msg  "DISKS" " " white
-        media_disk_listdisks   
+        media_disk_listdisks
         return
-    fi    
-      
-    #media_disk_listdisks -v   
+    fi
+
+
+    local PARTITION=$(media_device_fullname $1)
+
+    #media_disk_listdisks -v
 
 	media_device_checktarget $PARTITION   # don't put disk or part here, either is ok
 	if (( $? )); then return 1; fi
@@ -4896,8 +4896,12 @@ diskutil <verb> with no options will provide help on that verb  "
 }
 
 
-CMD=$1  
-TARGET=$(media_device_fullname $2)
+CMD=$1
+
+# only resolve TARGET when a device arg is present (e.g. test)
+if [[ -n $2 ]]; then
+    TARGET=$(media_device_fullname $2)
+fi
 
 #check for -v or -u
 case $CMD in 
