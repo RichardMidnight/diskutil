@@ -21,7 +21,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.75"  #2022-12-03
+VER="0.1.79"  #2026-09-19
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
@@ -37,7 +37,7 @@ SOUND=on
 
 FILESYSTEMS="fat16 fat32 exfat ntfs ext2 ext3 ext4 linux-swap freespace hfs+ hfs xfs btrfs"
 
-REQUIRED_TOOLS="dd pv bc file nano parted "
+REQUIRED_TOOLS="dd pv bc file nano parted udisksctl "
 
 WHITE='\033[1;37m'
 RED='\033[1;31m'
@@ -161,7 +161,15 @@ env_install_tools() {
     
     if [[ -z $(env_which $TOOL) ]] ; then
         case $TOOL in
-        
+
+        udisksctl)
+            sudo $INSTALL udisks2 -y
+            ;;
+
+        udisks2)
+            sudo $INSTALL udisks2
+            ;;
+
         *)
             #echo_white Installing $TOOL ...
             ui_echo "Installing $TOOL..." white
@@ -170,11 +178,39 @@ env_install_tools() {
                 ui_msg_warning $LINENO "$TOOL not installed."
             fi
             ;;
-        esac    
+        esac
     fi
     
     done
 }    
+
+
+env_list_filesystems(){
+    # lists supported filesystems and whether support (mkfs tools) is installed
+    local FILESYSTEM
+    local FILE
+    local INSTALLED
+
+    echo "Supported Filesystems:"
+
+    for FILESYSTEM in $FILESYSTEMS; do
+        case $FILESYSTEM in
+            fat16|fat32|vfat)   FILE="mkfs.vfat" ;;
+            linux-swap|freespace)  FILE="mkswap" ;;
+            hfs+)               FILE="mkfs.hfsplus" ;;
+            *)                  FILE="mkfs.$FILESYSTEM" ;;
+        esac
+
+        if [[ -z $(env_which $FILE) ]]; then
+            INSTALLED="Not installed"
+        else
+            INSTALLED="Installed"
+        fi
+
+        echo -e "$FILESYSTEM \t - "$INSTALLED
+    done
+
+}
 
 
 env_install_smarttools(){
@@ -801,7 +837,13 @@ media_device_name(){
     
     # add /dev/ to the front if missing
     local DEVICE=$(media_device_fullname $1)
-    
+
+    # loop devices contain the letter 'p': don't strip it as a partition suffix
+    if [[ $DEVICE == *loop* ]]; then
+        echo $DEVICE
+        return
+    fi
+
     # fixes having a partition num 10
     if [ ! -z "$( echo $DEVICE | grep 10 )" ] ;then
         echo $DEVICE | sed 's/[0-9]*//g'
@@ -945,7 +987,8 @@ media_disk_listdisks(){
     # list of disks available to the system
     local DISK
     #local DISKS=$(lsblk -n -d -e11 -o name)   # -e11 excludes cdrom
-    local DISKS=$(lsblk -n -d -o name) 
+    # only TYPE=disk: excludes loop, ram, rom, part, etc.
+    local DISKS=$(lsblk -n -d -o name,TYPE | awk '$2 == "disk" {print $1}')
 #echo_debug $LINENO $DISKS    
     local YESNO
     local VERBOSE
@@ -1728,12 +1771,14 @@ media_disk_verify() {
         if (( $? )); then return 1; fi
     fi
     
-    echo "The disk '$DISK' apears to be OK"
-    
-    
-  #  if (( ! $(ui_yesno "Verify partitions" "verify all $PARTCOUNT partitons on '$DISK' " "$YESNO") )); then 
-  #      media_partition_check $DISK   
-  #  fi
+    echo "The partition table on disk '$DISK' appears to be OK"
+
+
+    if (( ! $(ui_yesno "Verify partitions" "verify all $PART_COUNT partitions on '$DISK' " "$YESNO") )); then
+       for PART in $(seq 1 $PART_COUNT); do
+            media_filesystem_check $DISK$PART $VERBOSE
+       done
+    fi
 }
 
 
@@ -4667,7 +4712,7 @@ diskutil_help(){
     getargs $*  
     
     
-#echo "Disk Utility Tool  ver $VER
+echo "Disk Utility Tool  ver $VER"
 echo "Utility to manage local disks and physical volumes. Inspired by Apple's diskutil
 A physical volume refers to a drive or partition plus it's filesystem.
 Most commands DO NOT require an administrator or root user
@@ -4777,65 +4822,65 @@ case $CMD in
         echo
         ;;        
 
-    info*)          media_device_info $2 $3 $4 $5 
+    info*)          media_device_info ${@:2}
 
         ;;
     
-    listFilesystems)        echo "Supported file systems: $FILESYSTEMS "    ;;
+    listFilesystems)        env_list_filesystems ;;
 
-    mount)                  media_volume_mount $2 $3 $4 -y ;;  
-    umount|unmount)         media_volume_unmount $2 $3 $4 -y ;;  
-    mountDisk)              media_disk_mount $2 $3 $4;;
-    umountDisk|unmountDisk) media_disk_unmount $2 $3 $4;;
-    eject)                  media_disk_eject $2 $3 $4;;
+    mount)                  media_volume_mount ${@:2} -y ;;
+    umount|unmount)         media_volume_unmount ${@:2} -y ;;
+    mountDisk)              media_disk_mount ${@:2};;
+    umountDisk|unmountDisk) media_disk_unmount ${@:2};;
+    eject)                  media_disk_eject ${@:2};;
 
-    rename)    				media_filesystem_rename $2 $3 $4 $5;;
+    rename)    				media_filesystem_rename ${@:2};;
     
-    verify)		            media_volume_verify $2 $3 $4;;
-    repair)     	        media_volume_repair $2 $3 $4 ;;
-    verifyDisk)             media_disk_verify $2 $3;; 
-    repairDisk)             media_disk_repair $2 $3;; 
+    verify)		            media_volume_verify ${@:2};;
+    repair)     	        media_volume_repair ${@:2} ;;
+    verifyDisk)             media_disk_verify ${@:2};;
+    repairDisk)             media_disk_repair ${@:2};;
     
-    resize)           		media_volume_resize $2 $3 $4 $5;;
+    resize)           		media_volume_resize ${@:2};;
 
 # destructive verbs
     
-    eraseDisk)              media_disk_format $2 $3 $4 $5 $6 ;;
-    eraseVolume)            media_partition_format $2 $3 $4 $5 $6 ;;
-    reformat)               media_partition_reformat $2 $3 $4 $5 ;;
+    eraseDisk)              media_disk_format ${@:2} ;;
+    eraseVolume)            media_partition_format ${@:2} ;;
+    reformat)               media_partition_reformat ${@:2} ;;
     
     
-    initDisk)               media_disk_initialize $2 $3 $4  ;;  
-    addVolume)              media_volume_add $2 $3 $4 $5 $6 $7;;
-    delVolume)              media_volume_del $2 $3 $4 ;;
+    initDisk)               media_disk_initialize ${@:2}  ;;
+    addVolume)              media_volume_add ${@:2};;
+    delVolume)              media_volume_del ${@:2} ;;
     
         
     
 # hidden functions    
     
-    verifyFS)               media_filesystem_check $2 $3 $4 ;;
-    repairFS)               media_filesystem_repair $2 $3 $4 ;;
-    verifyPart)             media_partition_check $2 $3 $4 ;;
+    verifyFS)               media_filesystem_check ${@:2} ;;
+    repairFS)               media_filesystem_repair ${@:2} ;;
+    verifyPart)             media_partition_check ${@:2} ;;
     
-    resizePart)             media_partition_resize $2 $3 $4 $5 $6;;
-    resizeFS)               media_filesystem_resize $2 $3 $4 $5 $6;;    
+    resizePart)             media_partition_resize ${@:2};;
+    resizeFS)               media_filesystem_resize ${@:2};;
     
-    partitionDisk)          media_disk_createpartitiontable $2 $3 $4 ;;
+    partitionDisk)          media_disk_createpartitiontable ${@:2} ;;
     
-    addPartition)           media_disk_addpartition $2 $3 $4 $5 $6 $7;;
-    delPartition)           media_disk_delpartition $2 $3 $4 ;;
+    addPartition)           media_disk_addpartition ${@:2};;
+    delPartition)           media_disk_delpartition ${@:2} ;;
 
     
    # zeroDisk)               media_disk_wipe "$2" zero $3 $4;;    #shred or dd or 
    # randomDisk)             media_disk_wipe "$2" random $3 $4 ;;
    # secureErase)            media_disk_wipe "$2" shred $3 $4;;
-    wipePartition)          media_device_wipe "$2" part $3 $4 $5 $6;;
-    wipeDisk)               media_device_wipe "$2" disk $3 $4 $5 $6;;     
+    wipePartition)          media_device_wipe "${2}" part ${@:3};;
+    wipeDisk)               media_device_wipe "${2}" disk ${@:3};;
     
-    badBlocks)              media_volume_badblocks $2 $3 $4 $5 ;;
+    badBlocks)              media_volume_badblocks ${@:2} ;;
     hexedit)                sudo hexedit $(media_device_fullname $2);;
     
-    os)                     media_disk_os    $2 $3 ;;
+    os)                     media_disk_os    ${@:2} ;;
     
     installFS)				
         if [[ $2 == all ]]; then
