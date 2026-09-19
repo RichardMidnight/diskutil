@@ -104,14 +104,62 @@ env_installer(){
     elif [ -f /usr/bin/pacman ]; then        # arch
         INSTALLER="pacman -S --noconfirm"
     elif [ -f /usr/bin/dnf ]; then            #rpm / fedora
-        INSTALLER="dnf install -y"  
+        INSTALLER="dnf install -y"
+    elif [ -f /usr/bin/zypper ]; then         # opensuse
+        INSTALLER="zypper install -y"
+    elif [ -f /usr/bin/xbps-install ]; then   # void
+        INSTALLER="xbps-install -S -y"
     fi
 
     echo "$INSTALLER"
 }
 
 
-env_root_device() {    
+env_removal(){
+    # returns the package removal command for this distro
+
+    local REMOVER=
+
+    if [ -f /usr/bin/apt ]; then             # debian
+        REMOVER="apt remove -y"
+    elif [ -f /usr/bin/pacman ]; then        # arch
+        REMOVER="pacman -Rns"
+    elif [ -f /usr/bin/dnf ]; then            #rpm / fedora
+        REMOVER="dnf remove -y"
+    elif [ -f /usr/bin/zypper ]; then         # opensuse
+        REMOVER="zypper rm -y"
+    elif [ -f /usr/bin/xbps-install ]; then   # void
+        REMOVER="xbps-install -R"
+    fi
+
+    echo "$REMOVER"
+}
+
+
+env_package_in_use(){
+    # returns true (0) if an installed package depends on the given package,
+    # or if the package is marked Essential by the distro
+
+    local PKG=$1
+
+    if [ -f /usr/bin/apt ]; then
+        local SIM=$(apt-get -s remove "$PKG" 2>/dev/null)
+        # apt itself flags Essential removals
+        if echo "$SIM" | grep -q "essential packages will be removed"; then
+            return 0
+        fi
+        # other installed packages would be removed in the chain -> in use
+        local OTHERS=$(echo "$SIM" | awk '/will be REMOVED:/{f=1;next} f && /^ [^ ]/{print} f && !/^ /{exit}' | tr ' ' '\n' | grep -v "^$PKG$" | tr '\n' ' ')
+        if [[ -n $OTHERS ]]; then
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
+
+env_root_device() {
     # simpler
     findmnt -no source /
 }
@@ -274,20 +322,25 @@ media_filesystem_install(){
             if (( $(ui_yesno "INSTALL FS" "Install support for $FS_TYPE" $YESNO) )); then
                 #sudo apt-get install fuse ntfs-3g
                 echo_white Installing ntfs support...
-                run_command "sudo $INSTALL fuse " $LINENO -v
-                run_command "sudo $INSTALL ntfs-3g " $LINENO -v
-                run_command "sudo $INSTALL ntfsprogs " $LINENO -v  #ntfsprogs is for arch
+                 run_command "sudo $INSTALL fuse " $LINENO -v
+                 run_command "sudo $INSTALL ntfs-3g " $LINENO -v    # arch: 'ntfsprogs' instead
                 #sudo modprobe fuse 
                 #echo "fuse" | sudo tee -a /etc/modules
             fi    
             ;;
     
         ext2|ext3|ext4)
-			run_command "sudo $INSTALL e2fsprogs " $LINENO -v
-            ;;  
+            if (( $(ui_yesno "INSTALL FS" "Install support for $FS_TYPE" $YESNO) )); then
+                echo_white Installing ext support ...
+                run_command "sudo $INSTALL e2fsprogs " $LINENO -v
+            fi
+            ;;
             
         linux-swap|freespace)
-			run_command "sudo $INSTALL util-linux " $LINENO -v
+            if (( $(ui_yesno "INSTALL FS" "Install support for $FS_TYPE" $YESNO) )); then
+                echo_white Installing swap support ...
+                run_command "sudo $INSTALL util-linux " $LINENO -v
+            fi
             ;;
             
          hfs+|hfsplus)
@@ -306,15 +359,13 @@ media_filesystem_install(){
             fi
             ;;
             
-       hfs)
+        hfs)
+            # hfsprogs provides mkfs.hfs and mkfs.hfsplus (old 'hfsutils' package is gone)
             if (( $(ui_yesno "INSTALL FS" "Install support for $FS_TYPE" $YESNO) )); then
                 echo_white Installing hfs support...
-           #     run_command "sudo $INSTALL hfsprogs " $LINENO -v  # /sbin mkfs.hfsplus, mkfs.hfs
-                run_command "sudo $INSTALL hfsutils " $LINENO -v    # /usr/bin/ hattrib, hcd, hcopy, hdel, hdir, hformat, hls, hmkdir, hmount, hpwd, hrename, hrmdir, humount, hvol
-                # dont know if this is needed...
-            #    run_command "sudo $INSTALL hfsutils-tcltk " $LINENO -v  # /usr/bin/hfs
+                run_command "sudo $INSTALL hfsprogs " $LINENO -v
             fi
-            ;;     
+            ;;
             
         # apfs)
             # Apple File System.  some driver by paragon ??
@@ -338,20 +389,19 @@ media_filesystem_install(){
 			;;
                     
         xfs)
-			#
             if (( $(ui_yesno "INSTALL FS" "Install support for $FS_TYPE" $YESNO) )); then
-                run_command "sudo apt install xfsprogs -y" $LINENO -v
-                run_command "sudo apt install xfsdump -y" $LINENO -v
+                echo_white Installing xfs support ...
+                run_command "sudo $INSTALL xfsprogs " $LINENO -v
+                run_command "sudo $INSTALL xfsdump " $LINENO -v
             fi
-			;;
+            ;;
             
         btrfs)
             # https://www.thegeekdiary.com/how-to-check-btrfs-filesystem-usage-and-perform-balancing/
             # https://www.tecmint.com/create-btrfs-filesystem-in-linux/
             if (( $(ui_yesno "INSTALL FS" "Install support for $FS_TYPE" $YESNO) )); then
-               # run_command "sudo apt install btrfs-tools -y" $LINENO -v  # old
-                run_command "sudo apt install btrfs-progs -y" $LINENO -v
-              #  run_command "sudo modprobe btrfs" $LINENO -v # enable the Kernel module for btrfs
+                echo_white Installing btrfs support ...
+                run_command "sudo $INSTALL btrfs-progs " $LINENO -v
             fi
             ;;
             
@@ -359,7 +409,8 @@ media_filesystem_install(){
             # common interface file system.  For SMB shares 
             # https://linuxize.com/post/how-to-mount-cifs-windows-share-on-linux/       
             if (( $(ui_yesno "INSTALL FS" "Install support for $FS_TYPE" $YESNO) )); then
-                run_command "sudo apt install cifs-utils -y" $LINENO -v
+                echo_white Installing cifs support ...
+                run_command "sudo $INSTALL cifs-utils " $LINENO -v
             fi
             ;;
           
@@ -369,6 +420,68 @@ media_filesystem_install(){
     esac
     
 }
+
+
+media_filesystem_uninstall(){
+    # removes support for a filesystem
+
+    if [[ -z $1 ]]; then
+        echo "Usage: diskutil uninstallFS [filesystem] [-y]"
+        echo "Supported filesystems are: [$FILESYSTEMS]"
+        echo "'all' is not allowed with uninstallFS"
+        return
+    fi
+
+    local PACKAGES
+    case $1 in
+        fat16|fat32|vfat)    PACKAGES="dosfstools mtools fatresize" ;;
+        exfat)               PACKAGES="exfatprogs" ;;
+        ntfs)                PACKAGES="ntfs-3g fuse" ;;
+        ext2|ext3|ext4)      PACKAGES="e2fsprogs" ;;
+        linux-swap|freespace)  PACKAGES="util-linux" ;;
+        hfs+|hfsplus)        PACKAGES="hfsprogs" ;;
+        hfs)                 PACKAGES="hfsprogs" ;;
+        xfs)                 PACKAGES="xfsprogs xfsdump" ;;
+        btrfs)               PACKAGES="btrfs-progs" ;;
+        cifs)                PACKAGES="cifs-utils" ;;
+        *)
+            echo unknown filesystem: $1.  line $LINENO
+            return 1
+            ;;
+    esac
+
+    local FS_TYPE=$1
+    local REMOVE=$(env_removal)
+
+    local YESNO
+    local VERBOSE
+    getargs $*
+
+    if (( ! $(ui_yesno "UNINSTALL FS" "Remove support for $FS_TYPE: $PACKAGES" $YESNO) )); then
+        echo "Uninstall canceled"
+        return
+    fi
+
+    # refuse to remove a package the system still needs
+    local PKG
+    local BLOCKED=""
+    for PKG in $PACKAGES; do
+        if env_package_in_use $PKG; then
+            BLOCKED="$BLOCKED $PKG"
+        fi
+    done
+
+    if [[ -n $BLOCKED ]]; then
+        ui_msg_error $LINENO "Cannot remove: the system requires:$BLOCKED"
+        return 1
+    fi
+
+    for PKG in $PACKAGES; do
+        echo_white Removing $PKG ...
+        run_command "sudo $REMOVE $PKG " $LINENO -v
+    done
+}
+
 
 # ---------- Misc functions
 
@@ -4727,6 +4840,7 @@ Usage:  diskutil [quiet] <verb> <options> [-y] [-v], where <verb> is as follows:
      info[rmation]      (Get information on a specific disk or volume)
      listFilesystems    (List supported file systems)
      installFS          (Install support for a filesystem or 'all' )
+     uninstallFS        (Remove support for a filesystem or 'all' )
 
      mount              (Mount a single volume)
      u[n]mount          (Unmount a single volume)
@@ -4882,14 +4996,22 @@ case $CMD in
     
     os)                     media_disk_os    ${@:2} ;;
     
-    installFS)				
+    installFS)
         if [[ $2 == all ]]; then
             for FS in $FILESYSTEMS ; do
                 media_filesystem_install $FS $3
             done
-        else    
+        else
             media_filesystem_install $2 $3
-        fi    
+        fi
+        ;;
+
+    uninstallFS)
+        if [[ $2 == all ]]; then
+            echo "uninstallFS does not support 'all'"
+        else
+            media_filesystem_uninstall $2 $3
+        fi
         ;;
         
     install)                diskutil_install $2 $3 ;;
