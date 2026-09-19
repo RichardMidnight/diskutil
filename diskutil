@@ -1141,7 +1141,8 @@ media_disk_list(){
 
     for DISK in $DISKS; do
         DEV=$(media_device_fullname $DISK)
-        TRANS=$(lsblk -dn -o TRANSPORT $DEV 2>/dev/null | head -1)
+        TRANS=$(lsblk -dn -o TRAN $DEV 2>/dev/null | xargs)
+        if [[ -z $TRANS ]]; then TRANS=$(lsblk -dn -o TRANSPORT $DEV 2>/dev/null | xargs); fi
         case $TRANS in
             usb|sd|thunderbolt)   LOCATION=external ;;
             *)                   LOCATION=internal ;;
@@ -1871,7 +1872,7 @@ media_disk_test () {
 
 
 media_disk_info(){
-    # displays info about a disk or a partition
+    # displays info about a disk, modeled on macOS 'diskutil info disk0'
 
     if [[ -z $1 ]]; then
         echo "Usage: diskutil info[rmation] device"
@@ -1879,30 +1880,45 @@ media_disk_info(){
     fi
 
     local DISK=$(media_device_name $1)
-  #  local PARTITION=$(media_device_fullname $1)
+    local DEV=$(media_device_fullname $1)
 
     local YESNO
     local VERBOSE
     getargs $*
 
-    echo_white "Disk and Partition info '$DISK'"
-    run_command "sudo parted $DISK print free" $LINENO -v
+    local MODEL=$(media_disk_model $DISK)
+    local SIZE=$(bytes $(lsblk -dnb -o SIZE $DEV) -h)
+    local SECTOR=$(lsblk -dn -o LOG-SEC $DEV 2>/dev/null | xargs)
+    [[ -z $SECTOR ]] && SECTOR=$(lsblk -dn -o LOG-SECTOR $DEV 2>/dev/null | xargs)
+    local PT=$(lsblk -dn -o PTTYPE $DEV | xargs)
+    local PARTS=$(media_disk_partcount $DISK)
+    local TRANS=$(lsblk -dn -o TRAN $DEV 2>/dev/null | xargs)
+    [[ -z $TRANS ]] && TRANS=$(lsblk -dn -o TRANSPORT $DEV 2>/dev/null | xargs)
 
-    echo "Block size: $(media_disk_blocksize $DISK)B "
+    case $PT in
+        gpt)        PT="GUID" ;;
+        dos|msdos)  PT="MBR"  ;;
+        "")         PT="(none)" ;;
+    esac
 
     echo
-    echo_white Disk topology
-    run_command "lsblk -t $DISK" $LINENO $VERBOSE
+    echo "$DEV"
+    printf '%24s %s\n' "Device Node:" "$DEV"
+    printf '%24s %s\n' "Whole:" "Yes"
+    printf '%24s %s\n' "Model:" "$MODEL"
+    printf '%24s %s\n' "Protocol:" "${TRANS:--}"
+    printf '%24s %s\n' "Capacity:" "$SIZE"
+    printf '%24s %s\n' "Sector Size:" "${SECTOR:--} B"
+    printf '%24s %s\n' "Partition Map:" "$PT"
+    printf '%24s %s\n' "Volumes:" "$PARTS"
 
     if [[ $VERBOSE = -v ]]; then
         echo
-        echo_white "Filesystem info '$DISK'"
-        run_command "lsblk -f $DISK" $LINENO -v
-        echo
+        echo_white "Detail"
+        run_command "sudo parted $DEV print free" $LINENO -v
+        run_command "lsblk -f $DEV" $LINENO -v
+        run_command "lsblk -t $DEV" $LINENO -v
     fi
-
- #   echo_white "Operating Systems on '$DEVICE'..."
- #   media_disk_os $DEVICE
 }
 
 
@@ -2482,15 +2498,12 @@ media_disk_format(){
 
 
 media_device_info (){
-    # returns information about a device.
+    # returns information about a device, modeled on macOS 'diskutil info'
 
     # if no device specified...
     if [[ -z $1 ]]; then
         echo "Usage: diskutil info [disk | volume] [-v]"
         echo
-        #run_command "lsblk -o name,type,size,fstype,fssize,fsuse%,label,vendor,model,serial" $LINENO -v
-       # run_command "lsblk -f" $LINENO -v
-        ui_msg  "DISKS" " " white
         media_disk_listdisks
         return
     fi
@@ -2498,31 +2511,22 @@ media_device_info (){
 
     local PARTITION=$(media_device_fullname $1)
 
-    #media_disk_listdisks -v
-
 	media_device_checktarget $PARTITION   # don't put disk or part here, either is ok
 	if (( $? )); then return 1; fi
 
 
-	echo
-    media_disk_info $1 $2 $3 $4 $5
-    if (( $? )); then return 1; fi
+    if [[ $(media_device_type $PARTITION) = disk ]]; then
+        media_disk_info $1 $2 $3 $4 $5
+        if (( $? )); then return 1; fi
+    else
+        # a partition: first show its parent disk, then the volume
+        media_disk_info $(media_device_name $1)
+        if (( $? )); then return 1; fi
 
-
-
-
-    if [[ $(media_device_type $PARTITION) = part ]]; then
-
-        echo
-    media_filesystem_info $1 $2 $3 $4 $5
-    if (( $? )); then return 1; fi
-
-
-        echo
-        ui_msg "INFO" "Searching for Operating systems ..." white
-        media_partition_os $PARTITION
+        media_volume_info $1 $2 $3 $4 $5
         if (( $? )); then return 1; fi
     fi
+    return 0
 }
 
 
@@ -4092,6 +4096,54 @@ echo_debug $LINENO
 
 }
 
+
+
+media_volume_info(){
+    # displays information about a partition/volume, modeled on macOS
+    # 'diskutil info disk0s1' - read only, does not mount
+
+    if [[ -z $1 ]]; then
+        echo "Usage: diskutil info volume"
+        return
+    fi
+
+    local PARTITION=$(media_device_fullname $1)
+    local DISK=$(media_device_name $1)
+
+    local YESNO
+    local VERBOSE
+    getargs $*
+
+    local FSTYPE=$(lsblk -dn -o FSTYPE $PARTITION | xargs)
+    local SIZE=$(bytes $(lsblk -dnb -o SIZE $PARTITION) -h)
+    local USED=$(lsblk -dn -o FSUSED $PARTITION | xargs)
+    local LABEL=$(lsblk -dn -o LABEL $PARTITION | xargs)
+    local MOUNT=$(lsblk -dn -o MOUNTPOINT $PARTITION | xargs)
+    local UUID=$(blkid -s UUID -o value $PARTITION 2>/dev/null)
+
+    echo
+    echo "$PARTITION"
+    local FS=${FSTYPE:-<unformatted>}
+    printf '%24s %s\n' "Device Node:" "$PARTITION"
+    printf '%24s %s\n' "Whole:" "No"
+    printf '%24s %s\n' "Part. of Whole:" "$DISK"
+    printf '%24s %s\n' "Type:" "$FS"
+    [[ -n $LABEL ]] && printf '%24s %s\n' "Filesystem Personality:" "$LABEL"
+    [[ -n $UUID  ]] && printf '%24s %s\n' "UUID:" "${UUID}  (${FSTYPE})"
+    local FSSIZE=$(lsblk -dn -o FSSIZE $PARTITION | xargs)
+    [[ -n $FSSIZE ]] && printf '%24s %s\n' "Filesystem Size:" "$FSSIZE"
+    [[ -n $USED  ]] && printf '%24s %s\n' "Percent Used:" "${USED}%"
+    [[ -n $MOUNT ]] && printf '%24s %s\n' "Current Mount Point:" "$MOUNT"
+    printf '%24s %s\n' "Volume Size:" "$SIZE"
+
+    if [[ $VERBOSE = -v ]]; then
+        echo
+        echo_white "Detail"
+        run_command "blkid $PARTITION" $LINENO -v
+        run_command "lsblk -f $PARTITION" $LINENO -v
+    fi
+    return 0
+}
 
 
 media_filesystem_info(){
