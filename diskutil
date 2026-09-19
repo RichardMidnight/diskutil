@@ -1114,6 +1114,76 @@ media_disk_listdisks(){
 }
 
 
+media_disk_list(){
+    # lists available disks and their partitions, modeled on macOS 'diskutil list'
+    # usage: diskutil list [disk]
+
+    local DISKS
+
+    if [[ -n $1 ]]; then
+        DISKS=$(media_device_name $1)
+    else
+        # only real disks: no loop, zram or other virtual devices
+        DISKS=$(lsblk -n -d -o name,TYPE | awk '$2 == "disk" && $1 !~ /^(zram|loop)/ {print $1}')
+    fi
+
+    local DISK
+    local DEV
+    local TRANS
+    local LOCATION
+    local IDX
+    local NAME
+    local TYPE
+    local SIZE
+    local PT
+    local FSTYPE
+    local LABEL
+
+    for DISK in $DISKS; do
+        DEV=$(media_device_fullname $DISK)
+        TRANS=$(lsblk -dn -o TRANSPORT $DEV 2>/dev/null | head -1)
+        case $TRANS in
+            usb|sd|thunderbolt)   LOCATION=external ;;
+            *)                   LOCATION=internal ;;
+        esac
+
+        echo
+        echo "$DEV ($LOCATION, physical):"
+        printf '%4s  %-24s %-24s %-9s %s\n' "#:" "TYPE" "NAME" "SIZE" "IDENTIFIER"
+
+        IDX=0
+        lsblk -n -o NAME,TYPE,SIZE,PTTYPE,FSTYPE,LABEL $DEV 2>/dev/null |
+        sed -E 's/[[:space:]]+/ /g; s/^ +//; s/ +$//; s/^[^A-Za-z0-9]+//' |
+        while read -r NAME TYPE SIZE PT FSTYPE LABEL; do
+            IDX=$((IDX+1))
+
+            # '512M' -> '512 MB' style
+            if [[ $SIZE =~ ^([0-9.]+)([KMGT]?)$ ]]; then
+                case ${BASH_REMATCH[2]} in
+                    K) SIZE="${BASH_REMATCH[1]} KB" ;;
+                    M) SIZE="${BASH_REMATCH[1]} MB" ;;
+                    G) SIZE="${BASH_REMATCH[1]} GB" ;;
+                    T) SIZE="${BASH_REMATCH[1]} TB" ;;
+                    *) SIZE=${BASH_REMATCH[1]} ;;
+                esac
+            fi
+
+            if [[ $TYPE == disk ]]; then
+                # whole disk: show the partition scheme like macOS (MBR / GUID)
+                case $PT in
+                    dos|msdos) PT=MBR_partition_scheme ;;
+                    gpt)       PT=GUID_partition_scheme ;;
+                    *)         PT="$PT" ;;
+                esac
+                printf '%4s  %-24s %-24s %-9s %s\n' $IDX "$PT" "" "$SIZE" "/dev/$NAME"
+            else
+                printf '%4s  %-24s %-24s %-9s %s\n' $IDX "$FSTYPE" "$LABEL" "$SIZE" "/dev/$NAME"
+            fi
+        done
+    done
+}
+
+
 media_disk_align(){
     # returns an aligned byte number
     # eg: media_disk_align sda 2345433 roundup
@@ -4930,9 +5000,7 @@ case $CMD in
 
     terminology)    diskutil_terminology ;;
 
-    list)
-        run_command "lsblk $(media_device_name $2) -o name,type,size,pttype,fstype,label,fsuse%,mountpoint" $LINENO -v
-        echo
+    list)           media_disk_list ${@:2}
         ;;
 
     info*)          media_device_info ${@:2}
