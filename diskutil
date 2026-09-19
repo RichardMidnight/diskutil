@@ -692,7 +692,7 @@ bytes(){
             k|K|kb|KB)      echo $(($BASE*1024))   ;;
             m|M|mb|MB)      echo $(($BASE*1024*1024))   ;;
             g|G|gb|GB)      echo $(($BASE*1024*1024*1024))      ;;
-            t|T|tb|TB)      echo $(($BASE*1024*1024*1024*2014))  ;;
+            t|T|tb|TB)      echo $(($BASE*1024*1024*1024*1024))  ;;
             *)              ui_msg_error $LINENO "unknown suffix '$SUFFIX'"   ;;
         esac
     fi
