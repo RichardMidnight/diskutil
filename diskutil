@@ -371,10 +371,15 @@ media_filesystem_install(){
            # ;;
 
         unformatted)
+            ui_msg_warning $LINENO "$FS_TYPE is not a formattable filesystem. Nothing to install."
+            return 1
             ;;
 
         zfs)
-			# https://wiki.debian.org/ZFS
+            # ZFS support is not yet implemented; nothing to install
+            ui_msg_warning $LINENO "ZFS support is not yet implemented. Nothing to install."
+            return 1
+ 			# https://wiki.debian.org/ZFS
 
             #https://openzfs.github.io/openzfs-docs/Getting%20Started/Debian/index.html#installation
         #    sudo apt install dpkg-dev linux-headers-generic linux-image-generic
@@ -414,7 +419,8 @@ media_filesystem_install(){
             ;;
 
         *)
-            echo unknown filesystem: $FS_TYPE.  line $LINENO
+            ui_msg_warning $LINENO "Unknown filesystem '$FS_TYPE'. Nothing to install."
+            return 1
             ;;
     esac
 
