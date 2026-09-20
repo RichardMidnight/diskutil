@@ -1155,9 +1155,8 @@ media_disk_list(){
     local LABEL
 
     for DISK in $DISKS; do
-        DEV=$(media_device_fullname $DISK)
-        TRANS=$(lsblk -dn -o TRAN $DEV 2>/dev/null | xargs)
-        if [[ -z $TRANS ]]; then TRANS=$(lsblk -dn -o TRANSPORT $DEV 2>/dev/null | xargs); fi
+        DEV=$(media_device_fullname "$DISK")
+        TRANS=$(lsblk -dn -o TRAN "$DEV" 2>/dev/null | xargs)
         case $TRANS in
             usb|sd|thunderbolt)   LOCATION=external ;;
             *)                   LOCATION=internal ;;
@@ -1168,8 +1167,8 @@ media_disk_list(){
         printf '%4s  %-24s %-24s %-9s %s\n' "#:" "TYPE" "NAME" "SIZE" "IDENTIFIER"
 
         IDX=0
-        lsblk -n -o NAME,TYPE,SIZE,PTTYPE,FSTYPE,LABEL $DEV 2>/dev/null |
-        sed -E 's/[[:space:]]+/ /g; s/^ +//; s/ +$//; s/^[^A-Za-z0-9]+//' |
+        # -l (list format) avoids the '-d', '├─' tree prefixes, so no sed is needed.
+        lsblk -l -n -o NAME,TYPE,SIZE,PTTYPE,FSTYPE,LABEL "$DEV" 2>/dev/null |
         while read -r NAME TYPE SIZE PT FSTYPE LABEL; do
             IDX=$((IDX+1))
 
