@@ -4557,22 +4557,24 @@ getargs(){
     #sets the local variables of the calling function
 
     local ARGS=$*
-
-#echo_debug "args=$ARGS"
+    local FS
 
     for ARG in $ARGS; do
-#echo_debug "$LINENO testing arg '$ARG'"
-        case $ARG in
+        case "$ARG" in
             -y|--yes)           YESNO=-y    ;;
             -v|--verbose)       VERBOSE=-v  ;;
-     #       -q)                 QUIET=-q    ;;
             -f|--force)         FORCE=-f    ;;
             -n)                 RW=-n       ;;    # for badblocks
             *)
-                if [[ "$FILESYSTEMS" = *"$ARG"* ]]; then
-                    FS_TYPE=$ARG
-                fi
-
+                # match ARG against each entry of $FILESYSTEMS as a WHOLE word
+                # (substring match used to accept "btr" as "btrfs", "xt" as "ext*").
+                for FS in $FILESYSTEMS; do
+                    if [[ $FS == "$ARG" ]]; then
+                        FS_TYPE=$ARG
+                        break
+                    fi
+                done
+                ;;
         esac
     done
 }
