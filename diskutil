@@ -756,7 +756,7 @@ ui_echo(){
 
 ui_log(){
     # usage ui_log "message"
-    INFO=$*
+    local INFO=$*
 
     INFO=$(echo "$INFO" | sed 's/\\n/ -/g')  #change newline for ~
 
@@ -774,11 +774,11 @@ ui_log(){
 ui_msg() {
     #general message function.  Supports CLI whiptail and logging.
     # usage ui_msg INSTALL "$MSG" white OK log
-    TITLE="$1"
-    MSG="${2:-no message}"
-    COLOR="${3:-grey}"
+    local TITLE="$1"
+    local MSG="${2:-no message}"
+    local COLOR="${3:-grey}"
    # OK_BUTTON="${4:-Back}"
-    OK_BUTTON="${4:-OK}"
+    local OK_BUTTON="${4:-OK}"
     local LOGIT="${5:-no}"   # or log
 
     if [[ $LOGIT = log ]]; then
