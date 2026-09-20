@@ -90,7 +90,7 @@ run_command(){
 
 
 file_path(){
-    dirname "$*"
+    dirname "$1"
 }
 
 
@@ -110,6 +110,11 @@ env_installer(){
         INSTALLER="zypper install -y"
     elif [ -f /usr/bin/xbps-install ]; then   # void
         INSTALLER="xbps-install -S -y"
+    fi
+
+    if [ -z "$INSTALLER" ]; then
+        ui_msg_error "${1:-0}" "No supported package manager found (apt/pacman/dnf/zypper/xbps)."
+        return 1
     fi
 
     echo "$INSTALLER"
@@ -133,6 +138,11 @@ env_removal(){
         REMOVER="zypper rm -y"
     elif [ -f /usr/bin/xbps-install ]; then   # void
         REMOVER="xbps-install -R"
+    fi
+
+    if [ -z "$REMOVER" ]; then
+        ui_msg_error "${1:-0}" "No supported package manager found (apt/pacman/dnf/zypper/xbps)."
+        return 1
     fi
 
     echo "$REMOVER"
@@ -207,6 +217,9 @@ env_install_tools() {
     local TOOL
     #SILENT=${1:-"-n"}
     local INSTALL=$(env_installer)
+    if [[ -z $INSTALL ]]; then
+        return 1
+    fi
 
     for TOOL in $REQUIRED_TOOLS; do
 
@@ -295,6 +308,9 @@ media_filesystem_install(){
 
     local FS_TYPE=$1
     local INSTALL=$(env_installer)
+    if [[ -z $INSTALL ]]; then
+        return 1
+    fi
 
     local YESNO
     local VERBOSE
@@ -458,6 +474,9 @@ media_filesystem_uninstall(){
 
     local FS_TYPE=$1
     local REMOVE=$(env_removal)
+    if [[ -z $REMOVE ]]; then
+        return 1
+    fi
 
     local YESNO
     local VERBOSE
@@ -896,7 +915,7 @@ media_device_fullname(){
 
 media_device_partname(){
     # returns the partition name if present.  Same as returns the last digits in the string including p if needed.
-    local PARTNUM=$(echo $1 | sed 's/.*[^1-9]\(.*\)$/\1/')
+    local PARTNUM=$(echo $1 | sed 's/.*[^0-9]\(.*\)$/\1/')
 
     if [ -z "$(echo $1 | grep p)" ] ;then
         echo $PARTNUM
