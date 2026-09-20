@@ -524,16 +524,15 @@ do_countdown(){
     local MSG=${2:-"Pausing for $MAX seconds... Press y to continue immediately or any other key to stop"}
     local INPUT
 
-    # echo "Pausing for $MAX seconds... Press y to continue immediately or any other key to stop"
     echo "$MSG"
-	echo -n $MAX
+    echo -n "$MAX"
     sleep 1
     for number in $(seq 1 $MAX) ; do
-		echo -n ".$(($MAX-$number))"
+        echo -n ".$(($MAX-$number))"
         read -s -t 1 -N 1 INPUT
-        if [[ ! -z $INPUT ]]; then
+        if [[ -n $INPUT ]]; then
             if [[ $INPUT = y ]]; then
-                echo Continuing...
+                echo "Continuing..."
                 return
             else
                 echo " $INPUT Countdown stopped..."
