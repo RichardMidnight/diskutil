@@ -569,15 +569,15 @@ get_ver_to_int() {
 
 
 is_number(){
-    local NUM=$1
+    # validates that the argument is an integer (optionally leading '-').
+    # echoes 'true' (returns 0) when it is a number, 'false' (returns 1) otherwise.
+    # decimals and values like '+5' are not treated as numbers.
+    local NUM=${1:-}
 
-    # trim spaces from NUM
-    NUM=$(echo $NUM | sed 's/ //g')
+    # trim spaces from NUM (pure bash; avoids echo flag-parsing edge cases)
+    NUM=${NUM// /}
 
-  #  case $NUM in
-    #    ''|*[!0-9]*)
-
-    case ${NUM#-} in        # added support for neg numbers ?
+    case ${NUM#-} in
     ''|*[!0-9]*)
             echo false
             return 1
