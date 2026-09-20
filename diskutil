@@ -1239,49 +1239,44 @@ media_disk_align(){
 
 
 media_disk_first_available_byte(){
-    # returns the first available byte on disk.  aligned if asked
+    # returns the first available byte on disk, aligned to the block size
 
     local DISK=$(media_device_fullname $1)
-    local ALIGN=${2:-opt} # opt min none
     local LAST_PART_NUM=$(media_disk_partcount $DISK)
-    local LAST_PARTITION=$DISK$LAST_PART_NUM
-    local PART_NUM=$(( $LAST_PART_NUM + 1 ))
-    local PARTITION=$DISK$PART_NUM
     local BEG
     local BEG_UNALIGNED
     local BLOCK_SIZE=$(media_disk_blocksize $DISK)
-    local ROUND_UP
     local LAST_USED_BYTE
 
     media_device_checktarget $DISK disk
     if (( $? )); then echo_debug $LINENO ; return 1; fi
 
+    if [[ ! $(is_number $BLOCK_SIZE) = true ]]; then
+        echo_debug $LINENO "blocksize not a number: '$BLOCK_SIZE'"
+        return 1
+    fi
+
 
     # set BEG
     if [[ $LAST_PART_NUM -gt 0 ]]; then   # there are some partitions present
-     #   BEG_UNALIGNED=$(( $(media_partition_end $LAST_PARTITION -b) + 1 ))   # the next byte.
-
-        # new way
         # display the partition table, and get the last used byte.
         LAST_USED_BYTE=$(sudo parted $DISK -m unit B print | tail -n 1 | cut -d: -f3 | tr -d 'B')
+        if [[ ! $(is_number $LAST_USED_BYTE) = true ]]; then
+            echo_debug $LINENO "parted: invalid last-used-byte '$LAST_USED_BYTE'"
+            return 1
+        fi
         BEG_UNALIGNED=$(( $LAST_USED_BYTE + 1 ))
 
-        #align with Block_size
-        if [[ $(( $BEG_UNALIGNED % $BLOCK_SIZE )) == 0 ]]; then
-            ROUND_UP=0
-        else
-            ROUND_UP=$BLOCK_SIZE
+        # align with Block_size (round up to next block boundary)
+        BEG=$(( ( $BEG_UNALIGNED + $BLOCK_SIZE - 1 ) / $BLOCK_SIZE * $BLOCK_SIZE ))
+
+        if [[ $BEG_UNALIGNED -ne $BEG ]]; then
+            echo_debug Beginning religned from $BEG_UNALIGNED to $BEG
         fi
-        BEG_UNALIGNED=$(( $BEG_UNALIGNED + $ROUND_UP ))
-        BEG=$(( $BEG_UNALIGNED / $BLOCK_SIZE * $BLOCK_SIZE ))
 
     else
-        #BEG=$BLOCK_SIZE
+        # no partitions: leave a 1M gap for MBR/partition records
         BEG=$(( 1024 * 1024 ))
-    fi
-
-    if [[ $BEG_UNALIGNED -ne $BEG ]]; then
-        echo_debug Beginning religned from $BEG_UNALIGNED to $BEG
     fi
 
     echo $BEG
