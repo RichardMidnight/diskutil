@@ -4927,9 +4927,9 @@ diskutil_help(){
     getargs $*
 
 
-echo "Disk Utility Tool  ver $VER"
-echo "Utility to manage local disks and physical volumes. Inspired by Apple's diskutil
-A physical volume refers to a drive or partition plus it's filesystem.
+    echo "Disk Utility Tool  ver $VER"
+    echo "Utility to manage local disks and physical volumes. Inspired by Apple's diskutil
+A physical volume refers to a drive or partition plus its filesystem.
 Most commands DO NOT require an administrator or root user
 WARNING: Most destructive operations are not prompted
 
@@ -4937,7 +4937,7 @@ This simplifies the use of: mkfs, ckfs, mount, unmount, eject, resize , etc.
 
 Usage:  diskutil [quiet] <verb> <options> [-y] [-v], where <verb> is as follows:
 
-     terminology        ( )
+     terminology        (Show disk/volume terminology)
      list               (List available disks and partitions)
      info[rmation]      (Get information on a specific disk or volume)
      listFilesystems    (List supported file systems)
@@ -4968,14 +4968,13 @@ Usage:  diskutil [quiet] <verb> <options> [-y] [-v], where <verb> is as follows:
      X eraseOptical     (Erase optical media (CD/RW, DVD/RW, etc.))
 
 
-     initDisk           (initilize a disk with a new partition table, removing all data)
+     initDisk           (initialize a disk with a new partition table, removing all data)
      addVolume          (Create a new partition to occupy free space)
      delVolume          (Delete a partition)
      recoverPartitionTable (parted rescue mode)"
 
-
-if [[ ! -z $VERBOSE ]]; then
-echo "
+    if [[ -n $VERBOSE ]]; then
+    echo "
 -- HIDDEN VERBS ---
 
      resizePart         (Resizes just the Partition)
@@ -4984,9 +4983,9 @@ echo "
      badBlocks          (check Partition or Disk for bad blocks)
      hexedit            (view/edit Partition or Disk)
 "
-fi
+    fi
 
-echo "
+    echo "
 diskutil <verb> with no options will provide help on that verb  "
 
 
@@ -4995,7 +4994,7 @@ diskutil <verb> with no options will provide help on that verb  "
 ##     randomDisk           (Erase a disk, writing random data to the media)
  #    randomPartition
  #    secureErase          (Securely erase a disk)
-}
+    }
 
 
 CMD=$1
