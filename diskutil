@@ -966,27 +966,16 @@ media_device_name(){
         return
     fi
 
-    # add /dev/ to the front if missing
-    local DEVICE=$(media_device_fullname $1)
+    local DEVICE=$(media_device_fullname "$1")
 
-    # loop devices contain the letter 'p': don't strip it as a partition suffix
-    if [[ $DEVICE == *loop* ]]; then
-        echo $DEVICE
-        return
-    fi
-
-    # fixes having a partition num 10
-    if [ ! -z "$( echo $DEVICE | grep 10 )" ] ;then
-        echo $DEVICE | sed 's/[0-9]*//g'
-        return
-    fi
-
-    # note: can't put 0 in [1-9] or mmcblk0 fails.  handled above
-    # remove the partition number from then end
-    if [ -z "$( echo $DEVICE | grep p )" ] ;then
-        echo $DEVICE | sed 's/[1-9]*//g'
+    # loop/nvme/mmcblk encode partitions as a trailing 'p<number>'
+    # (e.g. loop7p1, nvme0n1p3, mmcblk0p2). Their base names contain
+    # required digits, so strip ONLY the structured 'p<n>' suffix.
+    if [[ $DEVICE == *loop* || $DEVICE == *nvme* || $DEVICE == *mmcblk* ]]; then
+        echo "$DEVICE" | sed -E 's/(loop[0-9]+|nvme[0-9]+n[0-9]+|mmcblk[0-9]+)p[0-9]+$/\1/'
     else
-        echo $DEVICE | sed 's/p[1-9]*//g'
+        # sd/vd/hd-style: partition is trailing digits (sda10 -> sda)
+        echo "$DEVICE" | sed 's/[0-9]*$//'
     fi
 }
 
