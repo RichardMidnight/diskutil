@@ -795,22 +795,22 @@ ui_msg() {
 
 ui_msg_error() {
     # usage:  ui_msg_error $LINENO "message"
-    LINE=$1
+    local LINE=$1
     shift
     do_beep_down
-    MSG="$@"
-    ui_msg $PRODUCTNAME "ERROR in line $LINE. $MSG" red "" log
+    local MSG="$*"
+    ui_msg "$PRODUCTNAME" "ERROR in line $LINE. $MSG" red "" log
 }
 
 
 ui_msg_warning(){
     # usage:  ui_msg_warning $LINENO "message"
-    LINE=$1
+    local LINE=$1
     shift
     do_beep
     do_beep
-    MSG="$@"
-    ui_msg WARNING "~ $MSG" red "" nolog
+    local MSG="$*"
+    ui_msg "WARNING" "~ $MSG" red "" nolog
 }
 
 
