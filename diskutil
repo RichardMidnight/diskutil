@@ -4901,7 +4901,7 @@ diskutil_update() {
 
 
 diskutil_terminology(){
-echo "diskutil terminology:
+    echo "diskutil terminology:
 
 Device / block device
 Disk
@@ -4917,7 +4917,7 @@ unmount
 
 "
 
-}
+    }
 
 
 diskutil_help(){
