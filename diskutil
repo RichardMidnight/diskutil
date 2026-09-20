@@ -190,8 +190,9 @@ env_which () {
     # test it with [[ -z $(env_which $FILE) ]].
     local FILE=$1
 
-    # make sure /usr/sbin is searchable without mutating the caller's PATH
-    local PATH
+    # make sure /usr/sbin is searchable without mutating the caller's PATH.
+    # NOTE: must assign ($PATH) -- a bare 'local PATH' would clear PATH in bash.
+    local PATH=$PATH
     case ":${PATH}:" in
         *:/usr/sbin:*) ;;
         *) PATH="$PATH:/usr/sbin" ;;
