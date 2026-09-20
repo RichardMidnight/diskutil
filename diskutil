@@ -536,8 +536,9 @@ get_elapsed_time() {
 do_countdown(){
     local MAX=${1:-10}
     local MSG=${2:-"Pausing for $MAX seconds... Press y to continue immediately or any other key to stop"}
+    local INPUT
 
-   # echo "Pausing for $MAX seconds... Press y to continue immediately or any other key to stop"
+    # echo "Pausing for $MAX seconds... Press y to continue immediately or any other key to stop"
     echo "$MSG"
 	echo -n $MAX
     sleep 1
@@ -553,7 +554,6 @@ do_countdown(){
                 return 2
             fi
         fi
-        MSG=$(echo "$MSG.$i")
     done
     echo ...
 }
@@ -630,10 +630,11 @@ bytes(){
     # modified to allow decimals ???
     local BYTES=$1
     local OUTPUT=${2:-"-h"};  #human or bytes
+    local NUM
 
   #  local BASE=$(echo $BYTES | tr -cd '[[:digit:]]' )
-   local BASE=$(echo $BYTES | tr -cd '[[0123456789]]' )
-    local SUFFIX=$(echo $BYTES | tr -cd '[[kmgtbKMGTB]]' )
+    local BASE=$(echo $BYTES | tr -cd '0123456789' )
+    local SUFFIX=$(echo $BYTES | tr -cd 'kmgtbKMGTB' )
 
 #echo_debug $LINENO $BASE $SUFFIX
 
