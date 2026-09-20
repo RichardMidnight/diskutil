@@ -524,11 +524,11 @@ do_beep_down(){
 
 
 get_elapsed_time() {
-    # paramaters are in seconds
+    # parameters are in seconds
     local BEG=$1
     local END=$2
 
-    echo $(( $(( $END-$BEG ))/60)) min $(( $(( $END-$BEG ))%60 )) sec
+    echo $(( ($END-$BEG)/60 )) min $(( ($END-$BEG)%60 )) sec
 }
 
 
