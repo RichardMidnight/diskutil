@@ -868,13 +868,13 @@ media_device_fullname(){
     # returns devicename with /dev/ added if needed
     local DEVICE=$1
 
-    if [ -z $DEVICE ]; then
-        echo_debug $LINENO No device specified.
+    if [[ -z $DEVICE ]]; then
+        echo_debug "$LINENO No device specified."
         return 1
     fi
 
     # add /dev/ if missing
-    if [[ ${DEVICE:0:5} != "/dev/" ]]; then    # "Device prefix not specified.  Adding '/dev/'"
+    if [[ ${DEVICE:0:5} != "/dev/" ]]; then
         echo "/dev/$DEVICE"
     else
         echo "$DEVICE"
