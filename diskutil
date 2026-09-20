@@ -1288,7 +1288,7 @@ media_disk_first_available_byte(){
 
 
 media_filesystem_ismounted(){
-    # returns 1 if mounted, null f not mounted.
+    # echoes 1 if the device is mounted, empty otherwise; always returns 0
 
     local PARTITION=$(media_device_fullname $1)
     local ROOT_DEV=$(findmnt -no source /)
@@ -1298,15 +1298,11 @@ media_filesystem_ismounted(){
         return
     fi
 
-    if [[ -z $(sudo df | grep ^$PARTITION) ]]; then
+    if [[ -z $(sudo df | grep "^$PARTITION[[:space:]]") ]]; then
         # not mounted
-        #echo 1
         return
-    else
-        # it is mounted
-        echo 1
-        return 1
     fi
+    echo 1
 }
 
 
@@ -3430,7 +3426,7 @@ media_filesystem_repair() {
         media_volume_unmount $PARTITION -y $VERBOSE
   #  fi
 
-    if [[ $(media_filesystem_ismounted $PARTITION) = true ]]; then
+    if [[ $(media_filesystem_ismounted $PARTITION) = 1 ]]; then
         echo $PARTITION is mounted.  Cannot repair.
         return 1
     fi
@@ -4517,7 +4513,7 @@ media_volume_resize(){
 #echo_debug $LINENO new=$NEW_SIZE  $(( $NEW_SIZE / 1024 / 1024 )) M
 
     # quit if still mounted
-    if [[ $(media_filesystem_ismounted $PARTITION) = true ]]; then
+    if [[ $(media_filesystem_ismounted $PARTITION) = 1 ]]; then
         echo $PARTITION is mounted. Cannot continue.
         return 1
     fi
