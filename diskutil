@@ -505,9 +505,8 @@ do_beep(){
     local FREQ=${1:-600}
     local TIME=${2:-.5}
 
-    if [[ $SOUND = on ]] ; then
-        (speaker-test -t sign -f $FREQ > /dev/null & sleep $TIME && kill -9 $! ) > /dev/null
-      #  sleep .5  # to allow the beep to end
+    if [[ $SOUND = on && $FREQ =~ ^-?[0-9]*\.?[0-9]+$ && $TIME =~ ^[0-9]*\.?[0-9]+$ ]] ; then
+        (speaker-test -t sign -f "$FREQ" > /dev/null 2>&1 & sleep "$TIME" && kill "$!") > /dev/null
     fi
 }
 
