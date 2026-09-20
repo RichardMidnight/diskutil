@@ -155,7 +155,7 @@ env_package_in_use(){
             return 0
         fi
         # other installed packages would be removed in the chain -> in use
-        local OTHERS=$(echo "$SIM" | awk '/will be REMOVED:/{f=1;next} f && /^ [^ ]/{print} f && !/^ /{exit}' | tr ' ' '\n' | grep -v "^$PKG$" | tr '\n' ' ')
+        local OTHERS=$(echo "$SIM" | awk '/will be REMOVED:/{f=1;next} f && /^  [^ ]/{sub(/^ +/,"");print;next} f{exit}' | tr ' ' '\n' | grep -v -F -x "$PKG" | tr '\n' ' ')
         if [[ -n $OTHERS ]]; then
             return 0
         fi
@@ -475,7 +475,7 @@ media_filesystem_uninstall(){
     local PKG
     local BLOCKED=""
     for PKG in $PACKAGES; do
-        if env_package_in_use $PKG; then
+        if env_package_in_use "$PKG"; then
             BLOCKED="$BLOCKED $PKG"
         fi
     done
