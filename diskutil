@@ -1009,18 +1009,17 @@ media_disk_pt_type(){
 media_device_checktarget(){
     # confirms that a device exists, is not root, and is of proper type
 
-    local DEVICE=$(media_device_fullname $1)
+    local DEVICE=$(media_device_fullname "$1")
     local TYPE=$2    # disk or part or blank
-    local PART_COUNT=$(media_disk_partcount $DEVICE)
 
-#echo_debug $LINENO  $DEVICE $TYPE $PART_COUNT
-
-#echo_debug $LINENO $DEVICE $TYPE $PART_COUNT
+#echo_debug $LINENO  $DEVICE $TYPE
 
     if [[ -z $DEVICE ]]; then
         ui_msg_error $LINENO "Target '$DEVICE' is blank"
         return 1
     fi
+
+    local PART_COUNT=$(media_disk_partcount "$DEVICE")
 
     if [[ ! -e $DEVICE ]]; then   # pause and try again
         sleep .5
