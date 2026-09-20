@@ -274,23 +274,6 @@ env_list_filesystems(){
 }
 
 
-env_install_smarttools(){
-    # https://www.addictivetips.com/ubuntu-linux-tips/check-hard-drive-health-on-linux/
-    # smartctl
-#Ubuntu
-sudo apt install smartmontools
-#Debian
-sudo apt-get install smartmontools
-#Arch Linux
-sudo pacman -S smartmontools
-#Fedora
-sudo dnf install smartmontools
-#OpenSUSE
-sudo zypper install smartmontools
-
-}
-
-
 media_filesystem_install(){
     # installs support for a filesystem
 
