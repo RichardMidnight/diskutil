@@ -896,13 +896,9 @@ media_device_partname(){
 
 media_device_partnum(){
     # returns the partition number if present.  Same as returns the last digits in the string.
-    #echo $1 | sed 's/.*[^1-9]\(.*\)$/\1/'
-    #  added the 0 to allow for partition # 10
-
-  #  local PARTNUM=$(echo $1 | sed 's/.*[^1-9]\(.*\)$/\1/')
     local PARTNUM=$(echo $1 | sed 's/.*[^0-9]\(.*\)$/\1/')
 
-    if [[ $(is_number "$PARTNUM") != true ]]; then
+    if ! is_number "$PARTNUM" > /dev/null; then
         echo_debug "$LINENO '$PARTNUM' not a number"
         return 1
     fi
