@@ -46,10 +46,10 @@ BLUE='\033[0;34m'
 LTBLUE='\033[1;34m'
 
 NC='\033[0m' 		# No Color, standard text
-echo_white()        { (echo -e "${WHITE}$*${NC}") }
-echo_red()          { (echo -e "${RED}$*${NC}") }
-echo_green()        { (echo -e "${GREEN}$*${NC}") }
-echo_blue()         { (echo -e "${LTBLUE}$*${NC}") }
+echo_white()        { printf '%b\n' "${WHITE}$*${NC}"; }
+echo_red()          { printf '%b\n' "${RED}$*${NC}"; }
+echo_green()        { printf '%b\n' "${GREEN}$*${NC}"; }
+echo_blue()         { printf '%b\n' "${LTBLUE}$*${NC}"; }
 
 
 echo_debug() {
