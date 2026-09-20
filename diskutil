@@ -166,6 +166,10 @@ env_package_in_use(){
         if [[ -n $OTHERS ]]; then
             return 0
         fi
+    else
+        # No supported manager to safely evaluate the removal. Fail safe:
+        # treat as "in use" so callers block the (destructive) removal.
+        return 0
     fi
 
     return 1
@@ -434,7 +438,7 @@ media_filesystem_uninstall(){
         echo "Usage: diskutil uninstallFS [filesystem] [-y]"
         echo "Supported filesystems are: [$FILESYSTEMS]"
         echo "'all' is not allowed with uninstallFS"
-        return
+        return 1
     fi
 
     local PACKAGES
@@ -443,14 +447,18 @@ media_filesystem_uninstall(){
         exfat)               PACKAGES="exfatprogs" ;;
         ntfs)                PACKAGES="ntfs-3g fuse" ;;
         ext2|ext3|ext4)      PACKAGES="e2fsprogs" ;;
-        linux-swap|freespace)  PACKAGES="util-linux" ;;
         hfs+|hfsplus)        PACKAGES="hfsprogs" ;;
         hfs)                 PACKAGES="hfsprogs" ;;
         xfs)                 PACKAGES="xfsprogs xfsdump" ;;
         btrfs)               PACKAGES="btrfs-progs" ;;
         cifs)                PACKAGES="cifs-utils" ;;
+        linux-swap|freespace)
+            # swap/freespace are core OS facilities in util-linux; nothing to remove
+            ui_msg_warning $LINENO "$1 support is a core OS facility (util-linux); cannot be removed."
+            return 1
+            ;;
         *)
-            echo unknown filesystem: $1.  line $LINENO
+            ui_msg_warning $LINENO "Unknown filesystem '$1'. Nothing to remove."
             return 1
             ;;
     esac
