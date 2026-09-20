@@ -1205,8 +1205,12 @@ media_disk_align(){
     local DISK=$(media_device_fullname $1)
     local END_BYTE=$2
     local ROUND=$3
-    local align=${4:-opt}
     local BLOCK_SIZE=$(media_disk_blocksize $DISK)
+
+    if [[ ! $(is_number $BLOCK_SIZE) = true ]]; then
+        echo_debug $LINENO blocksize not a number
+        return 1
+    fi
 
 #echo_debug $LINENO starting align $END_BYTE
     if [[ ! $(is_number $END_BYTE) = true ]]; then
@@ -1214,8 +1218,6 @@ media_disk_align(){
         echo $END_BYTE
         return
     fi
-
-    END_BYTE=$(bytes $END_BYTE -b)
 
     #check if END is past device size
     if [[ $END_BYTE -gt $(media_device_size $DISK) ]]; then
