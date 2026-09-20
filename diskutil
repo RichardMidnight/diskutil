@@ -504,16 +504,10 @@ do_beep(){
 }
 
 
-do_beep_up(){
-    do_beep 500 .3
-    do_beep 600 .4
-}
+do_beep_up(){ do_beep 500 .3; do_beep 600 .4; }
 
 
-do_beep_down(){
-   do_beep 600 .3
-   do_beep 500 .4
-}
+do_beep_down(){ do_beep 600 .3; do_beep 500 .4; }
 
 
 get_elapsed_time() {
