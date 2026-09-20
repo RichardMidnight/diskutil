@@ -89,11 +89,6 @@ run_command(){
 }
 
 
-file_path(){
-    dirname "$1"
-}
-
-
 env_installer(){
     # Note: returns a MULTI-WORD command (e.g. "apt install -y") that is intended
     # to word-split at the call site. Do NOT quote these call sites (sudo $INSTALL ...)
@@ -750,8 +745,8 @@ ui_log(){
 
     INFO=$(echo "$INFO" | sed 's/\\n/ -/g')  #change newline for ~
 
-    if [[ ! -d $(file_path $LOG_FILE) ]]; then
-        mkdir -p $(file_path $LOG_FILE)
+    if [[ ! -d $(dirname $LOG_FILE) ]]; then
+        mkdir -p $(dirname $LOG_FILE)
     fi
 
     if [[ $LOG = on ]]; then
