@@ -180,7 +180,7 @@ env_root_disk() {
 }
 
 
-env_which () {
+env_which() {
     # report whether a program is on PATH. Uses the bash built-in 'command -v'
     # instead of the 'which' external, so it needs no extra package and never
     # calls sudo. Returns 0 (and prints 1) when found, 1 otherwise -- callers
