@@ -623,89 +623,80 @@ info_validate_num(){
 
 
 bytes(){
-    # translates from bytes to human readable and vice-verse
-    # currently shows 3 significant digits.
-    # modified to allow neg numbers  NOT
-    # modified to allow decimals ???
-    local BYTES=$1
-    local OUTPUT=${2:-"-h"};  #human or bytes
-    local NUM
+    # converts between bytes and human readable sizes (pure bash, no bc)
+    #   bytes 512K -b    -> 524288
+    #   bytes 1048576    -> 1mb        (default direction is -h)
+    #   bytes 64M        -> 64M        (-h with a suffix passes input through)
+    # input: optional '-', digits, optional decimal fraction,
+    #        optional K/M/G/T suffix (optionally with a b), any case.
+    # returns 1 with no output on empty/invalid input.
+    local RAW=${1:-}
+    local TO=${2:--h}
+    local NEG="" INT FRAC SUFFIX DENOM NUMER N
+    local HUMAN UNIT FRACTION LTR
 
-  #  local BASE=$(echo $BYTES | tr -cd '[[:digit:]]' )
-    local BASE=$(echo $BYTES | tr -cd '0123456789' )
-    local SUFFIX=$(echo $BYTES | tr -cd 'kmgtbKMGTB' )
-
-#echo_debug $LINENO $BASE $SUFFIX
-
-
-    if ! $(is_number $BASE); then
-#echo_debug $LINENO "'$BASE' not a number    "
+    RAW=${RAW// /}
+    if [[ ! $RAW =~ ^(-?)([0-9]+)(\.([0-9]+))?([KkMmGgTt]([Bb])?|[Bb])?$ ]]; then
         return 1
     fi
 
-    # if no translation needed... then just echo the input and leave
-    if [[ $OUTPUT != "-h" && -z $SUFFIX ]]; then
-        echo $BYTES
-        return
+    [[ ${BASH_REMATCH[1]} = - ]] && NEG=-
+    INT=${BASH_REMATCH[2]}
+    FRAC=${BASH_REMATCH[4]:-}
+    SUFFIX=${BASH_REMATCH[5]}
+
+    # no translation needed: -h with a suffix passes input through
+    if [[ $TO = "-h" && -n $SUFFIX ]]; then
+        echo "$RAW"
+        return 0
     fi
 
-     if [[ $OUTPUT = "-h" && -n $SUFFIX ]]; then
-        echo $BYTES
-        return
+    # exact value in units = (INT*10^d + FRAC) / 10^d, kept as a rational
+    # (10# forces base 10 so leading zeros are not read as octal)
+    NUMER=$(( 10#$INT ))
+    DENOM=1
+    if [[ -n $FRAC ]]; then
+        DENOM=$(( 10 ** ${#FRAC} ))
+        NUMER=$(( NUMER * DENOM + 10#$FRAC ))
     fi
 
+    # normalize suffix ('tb' -> 'T'); unknown suffix with -b is an error
+    SUFFIX=${SUFFIX^^}
+    SUFFIX=${SUFFIX%B}
+    case $SUFFIX in
+        K)      UNIT=1024 ;;
+        M)      UNIT=$(( 1024 * 1024 )) ;;
+        G)      UNIT=$(( 1024 * 1024 * 1024 )) ;;
+        T)      UNIT=$(( 1024 * 1024 * 1024 * 1024 )) ;;
+        *)      UNIT=1 ;;
+    esac
 
-    if [[ $OUTPUT = "-h" ]]; then  # translate to human readable
-
-        if [ -z $SUFFIX ]; then
-            local LEN=${#BYTES}
-            local k_ilo=1024;
-            local m_ega=$k_ilo*$k_ilo;
-            local g_iga=$m_ega*$k_ilo;
-            local t_era=$g_iga*$k_ilo;
-            local p_eta=$t_era*$k_ilo;
-
-            [ -z "$BYTES" ] && return
-
-        #    NUM='^[0-9]+$'
-            NUM='^[0-9,-]+$'     # added support for neg numbers??
-            if ! [[ "$BYTES" =~ $NUM ]] ; then   # not a number
-                return 1
-            fi
-
-            case $LEN in
-                4) echo $(echo "scale=2; $BYTES/($k_ilo)" | bc)kb ;;
-                5) echo $(echo "scale=1; $BYTES/($k_ilo)" | bc)kb ;;
-                6) echo $(echo "scale=0; $BYTES/($k_ilo)" | bc)kb ;;
-
-                7) echo $(echo "scale=2; $BYTES/($m_ega)" | bc)mb ;;
-                8) echo $(echo "scale=1; $BYTES/($m_ega)" | bc)mb ;;
-                9) echo $(echo "scale=0; $BYTES/($m_ega)" | bc)mb ;;
-
-                10) echo $(echo "scale=2; $BYTES/($g_iga)" | bc)gb ;;
-                11) echo $(echo "scale=1; $BYTES/($g_iga)" | bc)gb ;;
-                12) echo $(echo "scale=0; $BYTES/($g_iga)" | bc)gb ;;
-
-                13) echo $(echo "scale=2; $BYTES/($t_era)" | bc)tb ;;
-                14) echo $(echo "scale=1; $BYTES/($t_era)" | bc)tb ;;
-                15) echo $(echo "scale=0; $BYTES/($t_era)" | bc)tb ;;
-                *)  echo $BYTES ;;
-            esac
-        else
-            echo $BYTES
-        fi
-
-    else  # translate to bytes
-#    echo_debug $LINENO $1 $SUFFIX
-        case $SUFFIX in
-            b|B|"")         echo $BASE            ;;
-            k|K|kb|KB)      echo $(($BASE*1024))   ;;
-            m|M|mb|MB)      echo $(($BASE*1024*1024))   ;;
-            g|G|gb|GB)      echo $(($BASE*1024*1024*1024))      ;;
-            t|T|tb|TB)      echo $(($BASE*1024*1024*1024*1024))  ;;
-            *)              ui_msg_error $LINENO "unknown suffix '$SUFFIX'"   ;;
-        esac
+    if [[ $TO = "-b" ]]; then  # translate to bytes
+        echo "$NEG$(( NUMER * UNIT / DENOM ))"
+        return 0
     fi
+
+    # translate to human readable (kb/mb/gb/tb, 2 decimals when there is a
+    # remainder; raw number below 1000)
+    N=$(( NUMER / DENOM ))
+    if (( N < 1000 )); then
+        echo "$NEG$N"
+        return 0
+    fi
+
+    if   (( N >= 1024**4 )); then HUMAN=$(( N / 1024**4 )); UNIT=$(( 1024**4 )); LTR=tb
+    elif (( N >= 1024**3 )); then HUMAN=$(( N / 1024**3 )); UNIT=$(( 1024**3 )); LTR=gb
+    elif (( N >= 1024**2 )); then HUMAN=$(( N / 1024**2 )); UNIT=$(( 1024**2 )); LTR=mb
+    else                          HUMAN=$(( N / 1024   )); UNIT=1024;   LTR=kb
+    fi
+
+    if (( N % UNIT == 0 )); then
+        echo "$NEG$HUMAN$LTR"
+    else
+        FRACTION=$(( (N % UNIT) * 100 / UNIT ))
+        echo "$NEG$HUMAN.$(printf %02d "$FRACTION")$LTR"
+    fi
+    return 0
 }
 
 
