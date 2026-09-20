@@ -2627,7 +2627,7 @@ echo_debug  $LINENO $TYPE
         return 3
     fi
 
-    if [[ $TYPE = disk ]] && [[ $DISK = $env_root_device ]]; then
+    if [[ $TYPE = disk ]] && [[ $DISK = $(env_root_device) ]]; then
         ui_msg_error $LINENO "Can not wipe root Disk"
         return 3
     fi
