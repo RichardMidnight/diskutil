@@ -226,8 +226,9 @@ env_install_tools() {
             sudo $INSTALL udisks2 -y
             ;;
 
-        udisks2)
-            sudo $INSTALL udisks2
+        dd)
+            # 'dd' is part of coreutils; there is no standalone 'dd' package
+            sudo $INSTALL coreutils -y
             ;;
 
         *)
