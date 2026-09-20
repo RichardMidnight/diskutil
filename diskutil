@@ -593,12 +593,11 @@ is_number(){
 info_validate_num(){
     local VAR=$1
     local NUM=$2
-   # local LINE=$3
     local MIN=$3
     local MAX=$4
 
 
-    if ! $(is_number "$NUM"); then
+    if ! is_number "$NUM" > /dev/null; then
         ((ERRORS++))
         ui_msg_error $LINENO "Variable '$VAR' '$NUM' not a number"
         return 1
@@ -608,7 +607,7 @@ info_validate_num(){
     if (( $MIN )); then
         if [ "$NUM" -lt "$MIN" ]; then
             ((ERRORS++))
-            ui_msg_error $LINENO "Variable '$VAR' '$NUM' ($(bytes $NUM) too small ('$MIN' '$MAX')"
+            ui_msg_error $LINENO "Variable '$VAR' '$NUM' ($(bytes $NUM)) too small (min '$MIN' max '$MAX')"
         fi
     fi
 
