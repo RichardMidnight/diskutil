@@ -818,9 +818,10 @@ ui_yesno(){
     # returns y or n  (1 or 0)
     # general yes/no function.  Supports CLI and whiptail.
     # note, this output is often assigned to a variable, so send any additional echo statements to > /dev/stderr.
-    TITLE="$1"
-    MSG="$2"
-    DEFAULT="$3"   # defaults to Yes.  can specify --defaultno
+    local TITLE="$1"
+    local MSG="$2"
+    local DEFAULT="$3"   # defaults to Yes.  can specify --defaultno
+    local yn
    # COLOR="${4:-white}"  color does not work with the 'read' command
 
 
@@ -832,7 +833,7 @@ ui_yesno(){
             do_beep
             MSG="$PRODUCTNAME: $TITLE: $MSG  [y/n]?"
             # change 'newline' chars to ' -'
-            MSG=$(echo $MSG | sed 's/\\n/ -/g')
+            MSG=$(echo "$MSG" | sed 's/\\n/ -/g')
             while true; do
                 read -s -n1 -p "$MSG" yn
                 case $yn in
@@ -862,11 +863,11 @@ ui_yesno(){
             DEFAULT=""
         fi
         whiptail --backtitle "$BACKTITLE"  --title "$TITLE" $DEFAULT --yesno "$MSG" $WT_MB_HEIGHT $WT_MB_WIDTH 3>&1 1>&2 2>&3
-        RC=$?
+        local RC=$?
         if (( $RC )); then
-            x=1
+            echo 0   # no
         else
-            echo y
+            echo 1   # yes
         fi
         return $RC
     fi
