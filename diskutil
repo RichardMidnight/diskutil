@@ -113,6 +113,10 @@ env_installer(){
         INSTALLER="xbps-install -S -y"
     fi
 
+    if [[ -z $INSTALLER ]]; then
+        echo "ERROR: no supported package manager found (apt/pacman/dnf/zypper/xbps); install packages manually." >&2
+        return 1
+    fi
     echo "$INSTALLER"
 }
 

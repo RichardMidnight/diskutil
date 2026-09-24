@@ -11,9 +11,9 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 1 | `echo_white` / `echo_red` / `echo_green` / `echo_blue` | 49–52 | — | one 4-line pattern |
 | 2 | `echo_debug` | 55 | FIX | added `DEBUG=off` setting + guard (on = blue stderr as before) |
 | 3 | `run_command` | 60 | PASS | audited in resize pass (rc + stdout semantics) |
-| 4 | `file_path` | 89 | — | |
-| 5 | `info` | 94 | — | |
-| 6 | `env_installer` | 99 | — | partially seen (FS pass); needs full read |
+| 4 | `file_path` | 89 | PASS | one-liner `dirname "$*"`; only caller passes $LOG_FILE (single arg) |
+| 5 | `info` | 94 | PASS | trivially correct but DEAD (no callers; baseline SC2317 — left per policy) |
+| 6 | `env_installer` | 99 | FIX | unknown-distro empty-result → clear error + return 1 |
 | 7 | `env_removal` | 118 | — | |
 | 8 | `env_package_in_use` | 139 | — | known: apt-only (zypper rm danger) |
 | 9 | `env_root_device` | 162 | PASS | audited in initDisk pass (410db81) |
