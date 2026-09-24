@@ -2024,6 +2024,12 @@ media_disk_initialize(){
     media_device_checktarget "$DISK" disk
     if (( $? )); then echo_debug $LINENO ; return 1; fi    
     
+    # refuse the disk that holds the root filesystem
+    if [[ $DISK = $(env_root_disk) ]]; then
+        ui_msg_error $LINENO "Device '$DISK' is the root disk - refusing to initialize"
+        return 1
+    fi
+
     if (( ! $(ui_yesno "INIT DISK" "WARNING!!  Erase all data on '$DISK'. Init as '$PT_TYPE' " "$YESNO") )); then
         ui_msg "INIT DISK" "~ $DISK not erased. " "" "" log
         return 1
@@ -2039,7 +2045,7 @@ media_disk_initialize(){
     run_command "sudo dd if=/dev/zero of=$DISK bs=512 count=10K" $LINENO "$VERBOSE"
     if (( $? )); then return 1; fi
 
-    echo "Writing new '$PART_TABLE' partition table to '$DISK'..."
+    echo "Writing new '$PT_TYPE' partition table to '$DISK'..."
     run_command "sudo parted -s $DISK mklabel $PT_TYPE" $LINENO "$VERBOSE"
     if (( $? )); then return 1; fi
     
@@ -2145,8 +2151,8 @@ media_disk_addpartition(){
     if (( $? )); then echo_debug $LINENO ; return 1; fi 
     
     # is this done in checktarget? might not be needed
-    # Stop if dev is the root device
-    if [[ $DEVICE = $(env_root_device) ]]; then
+    # Stop if dev is the root disk
+    if [[ $DEVICE = $(env_root_disk) ]]; then
         ui_msg_error $LINENO "Format root device not allowed"
         return 3
     fi
