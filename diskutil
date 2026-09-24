@@ -184,12 +184,14 @@ env_which () {
     #fixes manjaro's which command 
     local FILE=$1
     
-    # if which not installed, try to install it
+    # if which not installed, try to install it (per-distro manager only)
     which which 1>/dev/null 2>/dev/null
     if (( $? )); then
-        sudo apt install which -y
-        sudo pacman -S which --noconfirm
-        sudo dnf install which -y
+        local INST
+        INST=$(env_installer)
+        if [[ -n $INST ]]; then
+            sudo "$INST" which 1>/dev/null
+        fi
     fi
     
     # note: this may need to be a "sudo echo..." to set the admin path

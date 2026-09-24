@@ -18,7 +18,8 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 8 | `env_package_in_use` | 139 | FIX | apt chain-detection was dead (1-space indent test vs 2-space real; flowed list lines) → tokenize + self-exclude. Verified: libc-bin IN-USE (cloud-init,locales), bash IN-USE (essential), exfatprogs not-in-use. Non-apt distros still unguarded (known limitation, no change) |
 | 9 | `env_root_device` | 162 | PASS | audited in initDisk pass (410db81) |
 | 10 | `env_root_disk` | 168 | PASS | audited in initDisk pass (410db81) |
-| 11 | `env_install_tools` | 203 | — | |
+| 10b | `env_which` | 183 | FIX | triple-sequential apt/pacman/dnf install (no detection; broken on zypper/xbps, double-fail noise on Debian) → single per-distro install via audited `env_installer`; stdout kept quiet |
+| 11 | `env_install_tools` | 203 | — | walk done: `udisks2)` case branch is DEAD (REQUIRED_TOOLS has only udisksctl); reachable `udisksctl)` branch appends stray `-y` after package name → breaks pacman (`pacman -S --noconfirm udisks2 -y`); named branches lack the rc check the `*` branch has |
 | 12 | `env_list_filesystems` | 236 | — | partially seen (FS pass) |
 | 13 | `env_install_smarttools` | 265 | — | |
 | 14 | `media_filesystem_install` | 282 | PASS | FS support pass (6155a6e c631283) |
@@ -79,7 +80,7 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 69 | `media_disk_unmount` | 2348 | — | |
 | 70 | `media_disk_eject` | 2391 | — | |
 | 71 | `media_disk_format` | 2417 | — | |
-| 72 | `media_device_wipe` | 2555 | — | |
+| 72 | `media_device_wipe` | 2555 | — | FLAGGED (from #9 call-site walk): line 2628 `[[ $DISK = $env_root_device ]]` references a VARIABLE (empty) → root-disk guard is dead; `wipe mmcblk0 disk` would pass the guard. Fix belongs to this item: `$(media_device_name "$(env_root_device)")` |
 | 73 | `retire_maybe_media_partition_pt_type` | 2683 | — | |
 | 74 | `media_partition_fs_type` | 2694 | — | read (parted→lsblk fallback); formal PASS |
 | 75 | `media_partition_format` | 2758 | — | |
@@ -120,3 +121,4 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 2026-9 | #6 env_installer | FIX: empty-result guard for unknown distro (f7b6add) |
 | 2026-9 | #7 env_removal | FIX: same empty-result guard (b9590ac) |
 | 2026-9 | #8 env_package_in_use | FIX: apt chain-detection awk (indent + flowed lines), tokenized self-exclusion |
+| 2026-9 | #10b env_which | FIX: per-distro `which` install via env_installer (was unconditional apt+pacman+dnf) |
