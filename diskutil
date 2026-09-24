@@ -498,6 +498,29 @@ media_filesystem_uninstall(){
     local VERBOSE
     getargs $*
 
+    # check if this filesystem type is in use on this system (volumes present or mounted)
+    local KERNEL_FS
+    case $FS_TYPE in
+        fat16|fat32|vfat)        KERNEL_FS="vfat" ;;
+        hfs+|hfsplus)            KERNEL_FS="hfsplus" ;;
+        linux-swap|freespace)    KERNEL_FS="swap" ;;
+        *)                       KERNEL_FS="$FS_TYPE" ;;
+    esac
+
+    local IN_USE=""
+    local PARTS=$(lsblk -rn -o FSTYPE,NAME 2>/dev/null | awk -v fs="$KERNEL_FS" '$1==fs {print $2}' | tr '\n' ' ')
+    local MOUNTS=$(awk -v fs="$KERNEL_FS" '$3==fs {print $2}' /proc/mounts 2>/dev/null | tr '\n' ' ')
+    if [[ -n $PARTS ]];   then IN_USE="device(s) $PARTS"; fi
+    if [[ -n $MOUNTS ]];  then IN_USE="$IN_USE mounted at: $MOUNTS"; fi
+
+    if [[ -n $IN_USE ]]; then
+        ui_msg_warning $LINENO "'$FS_TYPE' is in use: $IN_USE"
+        if (( ! $(ui_yesno "UNINSTALL FS" "Filesystem '$FS_TYPE' is in use.  Remove support anyway?" "$YESNO") )); then
+            echo "Uninstall canceled"
+            return
+        fi
+    fi
+
     if [[ $FS_TYPE = zfs ]]; then
         ui_msg_warning $LINENO "ZFS pools will be LOST on removal. Destroy them first: zpool destroy <pool>"
     fi
