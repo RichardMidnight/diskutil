@@ -35,7 +35,7 @@ LOG=on
 INTERFACE=cli
 SOUND=on
 
-FILESYSTEMS="fat16 fat32 exfat ntfs ext2 ext3 ext4 linux-swap freespace hfs+ hfs xfs btrfs"
+FILESYSTEMS="fat16 fat32 exfat ntfs ext2 ext3 ext4 f2fs jfs reiserfs udf linux-swap freespace hfs+ hfs xfs btrfs"
 
 REQUIRED_TOOLS="dd pv bc file nano parted udisksctl "
 
@@ -246,6 +246,7 @@ env_list_filesystems(){
             fat16|fat32|vfat)   FILE="mkfs.vfat" ;;
             linux-swap|freespace)  FILE="mkswap" ;;
             hfs+)               FILE="mkfs.hfsplus" ;;
+            udf)                FILE="mkfsudf" ;;
             *)                  FILE="mkfs.$FILESYSTEM" ;;
         esac
 
@@ -337,9 +338,9 @@ media_filesystem_install(){
             ;;
             
         linux-swap|freespace)
+            # swap is a kernel feature - nothing to install (mkswap ships with util-linux)
             if (( $(ui_yesno "INSTALL FS" "Install support for $FS_TYPE" "$YESNO") )); then
-                echo_white Installing swap support ...
-                run_command "sudo $INSTALL util-linux " $LINENO -v
+                echo_white "swap support is built in (mkswap ships with util-linux). Nothing to install."
             fi
             ;;
             
@@ -375,18 +376,15 @@ media_filesystem_install(){
             ;;
             
         zfs)
-			# https://wiki.debian.org/ZFS
-            
-            #https://openzfs.github.io/openzfs-docs/Getting%20Started/Debian/index.html#installation
-        #    sudo apt install dpkg-dev linux-headers-generic linux-image-generic
-        #    sudo apt install zfs-dkms zfsutils-linux
-            
-            # https://tweenpath.net/install-setup-zfs-debian-11/
-			#run_command "sudo apt install linux-headers-amd64" $LINENO
-			#run_command "sudo apt install -t buster-backports zfsutils-linux" $LINENO
-            
-            #run_command "sudo apt install zfsutils-linux zfs-dkms zfs-zed $YESNO" $LINENO
-			;;
+            # zfs is pool-based - there is no mkfs.zfs.  Create volumes with: zfs create <pool> <dev>
+            # https://openzfs.github.io/openzfs-docs/Getting%20Started/Debian/index.html
+            if (( $(ui_yesno "INSTALL FS" "Install support for $FS_TYPE" "$YESNO") )); then
+                echo_white Installing zfs support ...
+                run_command "sudo $INSTALL zfsutils-linux " $LINENO -v
+                # kernel modules from source, where no prebuilt module is available
+                run_command "sudo $INSTALL zfs-dkms " $LINENO -v
+            fi
+            ;;
                     
         xfs)
             if (( $(ui_yesno "INSTALL FS" "Install support for $FS_TYPE" "$YESNO") )); then
@@ -414,8 +412,45 @@ media_filesystem_install(){
             fi
             ;;
           
+        f2fs)
+            if (( $(ui_yesno "INSTALL FS" "Install support for $FS_TYPE" "$YESNO") )); then
+                echo_white Installing f2fs support ...
+                run_command "sudo $INSTALL f2fs-tools " $LINENO -v
+            fi
+            ;;
+
+        jfs)
+            if (( $(ui_yesno "INSTALL FS" "Install support for $FS_TYPE" "$YESNO") )); then
+                echo_white Installing jfs support ...
+                run_command "sudo $INSTALL jfsutils " $LINENO -v
+            fi
+            ;;
+
+        reiserfs)
+            if (( $(ui_yesno "INSTALL FS" "Install support for $FS_TYPE" "$YESNO") )); then
+                echo_white Installing reiserfs support ...
+                run_command "sudo $INSTALL reiserfsprogs " $LINENO -v
+            fi
+            ;;
+
+        udf)
+            # Debian/Ubuntu: udftools (provides mkfsudf).  Verify name on other distros.
+            if (( $(ui_yesno "INSTALL FS" "Install support for $FS_TYPE" "$YESNO") )); then
+                echo_white Installing udf support ...
+                run_command "sudo $INSTALL udftools " $LINENO -v
+            fi
+            ;;
+
+        squashfs)
+            if (( $(ui_yesno "INSTALL FS" "Install support for $FS_TYPE" "$YESNO") )); then
+                echo_white Installing squashfs support ...
+                run_command "sudo $INSTALL squashfs-tools " $LINENO -v
+            fi
+            ;;
+
         *)  
             echo unknown filesystem: "$FS_TYPE".  line $LINENO
+            return 1
             ;;
     esac
     
@@ -443,6 +478,12 @@ media_filesystem_uninstall(){
         hfs)                 PACKAGES="hfsprogs" ;;
         xfs)                 PACKAGES="xfsprogs xfsdump" ;;
         btrfs)               PACKAGES="btrfs-progs" ;;
+        f2fs)                PACKAGES="f2fs-tools" ;;
+        jfs)                 PACKAGES="jfsutils" ;;
+        reiserfs)            PACKAGES="reiserfsprogs" ;;
+        udf)                 PACKAGES="udftools" ;;
+        squashfs)            PACKAGES="squashfs-tools" ;;
+        zfs)                 PACKAGES="zfsutils-linux zfs-dkms" ;;
         cifs)                PACKAGES="cifs-utils" ;;
         *)
             echo unknown filesystem: "$1".  line $LINENO
@@ -456,6 +497,10 @@ media_filesystem_uninstall(){
     local YESNO
     local VERBOSE
     getargs $*
+
+    if [[ $FS_TYPE = zfs ]]; then
+        ui_msg_warning $LINENO "ZFS pools will be LOST on removal. Destroy them first: zpool destroy <pool>"
+    fi
 
     if (( ! $(ui_yesno "UNINSTALL FS" "Remove support for $FS_TYPE: $PACKAGES" "$YESNO") )); then
         echo "Uninstall canceled"
@@ -1356,6 +1401,11 @@ echo_debug $LINENO MP="$MOUNT_POINT"
             #echo $FS_MIN
             ;;    
 
+        f2fs|jfs|reiserfs|udf)
+            # no shrink tool - current size is the safe minimum
+            FS_MIN=$(media_filesystem_size "$PARTITION" "$FS_TYPE")
+            ;;
+
         '') ;;
 
         *)
@@ -1508,7 +1558,7 @@ media_filesystem_size(){
             fi
             ;;
             
-        xfs|btrfs)
+        xfs|btrfs|f2fs|jfs|reiserfs|udf)
 			;;    
             
             
@@ -2773,14 +2823,31 @@ media_partition_format(){
 			run_command "sudo mkfs.xfs -f -L '$FS_NAME' $PARTITION" $LINENO "$VERBOSE"  # -v=volumename
 			;;
 			
-		zfs)
-			run_command "sudo mkfs.zfs -v '$FS_NAME' $PARTITION" $LINENO "$VERBOSE"  # -v=volumename
-			;;
+        zfs)
+            ui_msg_error $LINENO "zfs is pool-based - there is no mkfs.zfs. Create volumes with: zfs create <pool> <device>"
+            ES=1
+            ;;
             
         btrfs)
             run_command "sudo mkfs.btrfs -L '$FS_NAME' $PARTITION" $LINENO "$VERBOSE"
             ;;
             
+        f2fs)
+            run_command "sudo mkfs.f2fs $PARTITION" $LINENO "$VERBOSE"
+            ;;
+
+        jfs)
+            run_command "sudo mkfs.jfs $PARTITION" $LINENO "$VERBOSE"
+            ;;
+
+        reiserfs)
+            run_command "sudo mkfs.reiserfs -l '$FS_NAME' $PARTITION" $LINENO "$VERBOSE"
+            ;;
+
+        udf)
+            run_command "sudo mkfsudf $PARTITION" $LINENO "$VERBOSE"
+            ;;
+
         *)
             ui_msg_error $LINENO "Unknown format '$FORMAT'"
     esac
@@ -3267,6 +3334,45 @@ media_filesystem_check() {
           #  sudo btrfs check $PARTITION
         ;;    
         
+        f2fs)
+            run_command "sudo fsck.f2fs -f '$PARTITION'"  $LINENO  "$VERBOSE"
+            if (( $? )); then
+                if (( ! $(ui_yesno "VERIFY" "Errors found.  Try to fix" "$YESNO") )); then
+                    echo
+                    return 1
+                fi
+                echo_white  "Attempting to repair filesystem..."
+                media_filesystem_repair "$PARTITION" "$FS_TYPE" -y "$VERBOSE"
+                if (( $? )) ; then return 1; fi
+            fi
+            ;;
+
+        jfs)
+            run_command "sudo fsck.jfs '$PARTITION'"  $LINENO  "$VERBOSE"
+            if (( $? )); then
+                if (( ! $(ui_yesno "VERIFY" "Errors found.  Try to fix" "$YESNO") )); then
+                    echo
+                    return 1
+                fi
+                echo_white  "Attempting to repair filesystem..."
+                media_filesystem_repair "$PARTITION" "$FS_TYPE" -y "$VERBOSE"
+                if (( $? )) ; then return 1; fi
+            fi
+            ;;
+
+        reiserfs)
+            run_command "sudo reiserfsck --check '$PARTITION'"  $LINENO  "$VERBOSE"
+            if (( $? )); then
+                if (( ! $(ui_yesno "VERIFY" "Errors found.  Try to fix" "$YESNO") )); then
+                    echo
+                    return 1
+                fi
+                echo_white  "Attempting to repair filesystem..."
+                media_filesystem_repair "$PARTITION" "$FS_TYPE" -y "$VERBOSE"
+                if (( $? )) ; then return 1; fi
+            fi
+            ;;
+
         *)
             ui_msg_error $LINENO "Filesystem '$FILESYSTEM' not supported"
             #return 5
@@ -3459,6 +3565,21 @@ media_filesystem_repair() {
             run_command "sudo btrfs check --repair '$PARTITION' " $LINENO "$VERBOSE"
         ;;        
             
+        f2fs)
+            run_command "sudo fsck.f2fs -f '$PARTITION'" $LINENO "$VERBOSE"
+            if (( $? )); then return 1; fi
+            ;;
+
+        jfs)
+            run_command "sudo fsck.jfs -c '$PARTITION'" $LINENO "$VERBOSE"
+            if (( $? )); then return 1; fi
+            ;;
+
+        reiserfs)
+            run_command "sudo reiserfsck -cav '$PARTITION'" $LINENO "$VERBOSE"
+            if (( $? )) ; then return 1; fi
+            ;;
+
         *)
             ui_msg_error $LINENO "Unsupported file system '$FS_TYPE'"
             return 1
@@ -3702,6 +3823,37 @@ media_filesystem_resize(){
             ;;
         
         
+        f2fs)
+            # only grow-to-max is safe here.  Shrink with: resize.f2fs
+            if [[ $SIZE = max ]]; then
+                media_volume_mount "$PARTITION" -y
+                local MOUNT_POINT=$(df "$PARTITION" --output=target | grep ^/)
+                run_command "sudo grow.f2fs '$MOUNT_POINT'" $LINENO "$VERBOSE"
+                sleep .5
+                media_volume_unmount "$PARTITION" -y
+                if (( $? )); then return 1; fi
+            else
+                ui_msg_error $LINENO "Only 'max' resize is supported for f2fs here. Shrink with: resize.f2fs"
+                return 1
+            fi
+            ;;
+
+        reiserfs)
+            # can only be grown
+            if [[ $SIZE = max ]]; then
+                run_command "sudo resize_reiserfs -s '$PARTITION'" $LINENO "$VERBOSE"
+                if (( $? )); then return 1; fi
+            else
+                ui_msg_error $LINENO "reiserfs can only be grown (max). Shrinking is not supported."
+                return 1
+            fi
+            ;;
+
+        jfs|udf)
+            ui_msg_error $LINENO "Cannot resize $FS_TYPE filesystems - no safe resize tool is available."
+            return 1
+            ;;
+
         btrfsxxx)
             # mount to temp Mountpoint
             local PARTSTART
