@@ -30,6 +30,7 @@ ROOT_DEV=$(findmnt -no source /)
 SETTINGS="/home/$USER/.config/$SCRIPTNAME/$SCRIPTNAME.conf"
 LOG_FILE="/home/$USER/.config/$SCRIPTNAME/$SCRIPTNAME.log"
 LOG=on
+DEBUG=off    # echo_debug() is silent unless DEBUG=on  (e.g. 'DEBUG=on diskutil ...')
 
 # ERRORS=0
 INTERFACE=cli
@@ -53,7 +54,8 @@ echo_blue()         { (echo -e "${LTBLUE}$*${NC}") }
 
 
 echo_debug() { 
-    echo_blue DEBUG:$* > /dev/stderr 
+    [[ ${DEBUG:-off} = on ]] || return 0
+    echo_blue DEBUG:$* > /dev/stderr
     }
 
 
