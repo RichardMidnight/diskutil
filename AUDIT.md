@@ -14,7 +14,7 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 4 | `file_path` | 89 | PASS | one-liner `dirname "$*"`; only caller passes $LOG_FILE (single arg) |
 | 5 | `info` | 94 | PASS | trivially correct but DEAD (no callers; baseline SC2317 — left per policy) |
 | 6 | `env_installer` | 99 | FIX | unknown-distro empty-result → clear error + return 1 |
-| 7 | `env_removal` | 118 | — | |
+| 7 | `env_removal` | 120 | FIX | same unknown-distro guard as #6 |
 | 8 | `env_package_in_use` | 139 | — | known: apt-only (zypper rm danger) |
 | 9 | `env_root_device` | 162 | PASS | audited in initDisk pass (410db81) |
 | 10 | `env_root_disk` | 168 | PASS | audited in initDisk pass (410db81) |

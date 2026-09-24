@@ -138,6 +138,10 @@ env_removal(){
         REMOVER="xbps-install -R"
     fi
 
+    if [[ -z $REMOVER ]]; then
+        echo "ERROR: no supported package manager found (apt/pacman/dnf/zypper/xbps); remove packages manually." >&2
+        return 1
+    fi
     echo "$REMOVER"
 }
 
