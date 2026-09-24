@@ -2199,7 +2199,7 @@ media_disk_addpartition(){
     fi    
 
 
-echo_debug $LINENO BS=$BLOCK_SIZE beg="$BEG" rem=$(( $BEG % $BLOCK_SIZE ))
+#echo_debug $LINENO BS=$BLOCK_SIZE beg="$BEG" rem=$(( $BEG % $BLOCK_SIZE ))
 
     # add units to BEG and END
     if [[ $(is_number "$BEG") = true ]]; then
@@ -2234,7 +2234,7 @@ echo_debug $LINENO BS=$BLOCK_SIZE beg="$BEG" rem=$(( $BEG % $BLOCK_SIZE ))
     
     #get new partition number
     local NEW_NUM=$(sudo parted "$DEVICE" -m unit B print | grep "$BEG" | cut -d: -f1)
-echo_debug $LINENO new="$NEW_NUM"
+#echo_debug $LINENO new="$NEW_NUM"
     # store new partition number in global variable
     NEW_PARTITION_NUM=$NEW_NUM
     
@@ -2955,7 +2955,6 @@ media_partition_resize(){
         local END
 
         local PART_SIZE=$(media_partition_size "$PARTITION")
-        local YES   # used to auto answer parted when reducing size
         
         # get floating args
         local FS_TYPE 
@@ -2975,8 +2974,8 @@ media_partition_resize(){
 
         # skip if fat32
         #FS_TYPE=$(media_partition_fs_type $PARTITION)
-        if [[ $FS_TYPE = fat32 ]] || [[ $FS_TYPE = fat16 ]]; then
-            echo_white fat16 and fat32 partitions resize automatically.  Use -f to force it.
+        if [[ $FS_TYPE = fat32 ]] || [[ $FS_TYPE = fat16 ]] || [[ $FS_TYPE = vfat ]]; then
+            echo_red $LINENO "Note: parted does NOT resize the FAT filesystem itself. Afterwards run 'diskutil resizeFS $PARTITION <size>' or the filesystem will not match the (smaller) partition."
             if [[ $FORCE != -f ]]; then
               return
             fi
@@ -3021,18 +3020,35 @@ media_partition_resize(){
             return 1
         fi
 
-        # put 'yes' at end of parted if reducing it
-echo_debug "$LINENO  '$SIZE'  '$PART_SIZE'   " 
-        if [[ $SIZE -lt $PART_SIZE ]]; then
-            YES=yes
-        else
-            YES=
-        fi
+        # grow vs shrink  (compare the requested END against the partition's current END)
+        local CUR_END
+        CUR_END=$(( $(media_partition_start "$PARTITION") + PART_SIZE - 1 ))
+        local TGT_SIZE
+        TGT_SIZE=$(( END - $(media_partition_start "$PARTITION") + 1 ))
+echo_debug "$LINENO SIZE='$SIZE' CUR_END=$CUR_END TGT_SIZE=$TGT_SIZE END=$END "
 
         # resizes partition to a new end point
-        ui_msg "RESIZE" "Resizing Partition $PARTITION from $(bytes "$PART_SIZE" -h) to $(bytes "$SIZE" -h) endpoint='$END'... " white
-        run_command "sudo parted $DEVICE unit B resizepart $PART_NUM $END $YES" $LINENO -v   # -v verbose lets it ask y/n to continue
-        if (( $? )); then return 1; fi
+        ui_msg "RESIZE" "Resizing Partition $PARTITION from $(bytes "$PART_SIZE" -h) to $(bytes "$TGT_SIZE" -h) endpoint='$END'... " white
+        if [[ $END -gt $CUR_END ]]; then
+            # grow: no confirmation prompt involved, so script mode is fine
+            run_command "sudo parted -s $DEVICE unit B resizepart $PART_NUM $END" $LINENO -v
+            if (( $? )); then return 1; fi
+        else
+            # shrink: parted asks 'Shrinking a partition can cause data loss, continue? Yes/No'
+            # and only reads the answer when stdin is a tty, so pipe it 'Yes' via ---pretend-input-tty
+            run_command "printf 'unit B\nresizepart\n%s\n%s\nYes\nquit\n' \"$PART_NUM\" \"$END\" | sudo parted \"$DEVICE\" ---pretend-input-tty" $LINENO -v
+            if (( $? )); then
+                ui_msg_error $LINENO "parted refused to shrink $PARTITION"
+                return 1
+            fi
+            # ---pretend-input-tty exits 0 even when the resize itself errors, so verify it took effect
+            local NEW_SIZE
+            NEW_SIZE=$(media_partition_size "$PARTITION")
+            if (( NEW_SIZE < TGT_SIZE - 1048576 || NEW_SIZE > TGT_SIZE + 1048576 )); then
+                ui_msg_error $LINENO "Resize did not take effect (partition now $(bytes "$NEW_SIZE" -h), wanted $(bytes "$TGT_SIZE" -h))"
+                return 1
+            fi
+        fi
         
         
         if [[ $FS_TYPE = ntfs ]]; then
@@ -3838,7 +3854,11 @@ media_filesystem_resize(){
             
         xfs)
             # can only expand fs, cannot shrink fs
-            # must mount fs and use the mountpoint name
+            if [[ $SIZE != max ]]; then
+                ui_msg_error $LINENO "xfs can only be grown to 'max' here (xfs_growfs cannot shrink)"
+                return 1
+            fi
+            # must mount fs and use the mountpoint name; xfs_growfs without a size = grow to max
             media_volume_mount "$PARTITION" -y
             local MOUNT_POINT=$(df "$PARTITION" --output=target | grep ^/)
             run_command "sudo xfs_growfs -d $NEW_SIZE '$MOUNT_POINT' "  $LINENO "$VERBOSE"     # grow to max size
@@ -3881,12 +3901,13 @@ media_filesystem_resize(){
             ;;
 
         reiserfs)
-            # can only be grown
+            # resize_reiserfs with no -s sizes the fs to fill the partition (grow to max).
+            # (with -s <size> it can set an absolute size, even shrink, e.g. 'resize_reiserfs -s -1G'; we only offer max here)
             if [[ $SIZE = max ]]; then
-                run_command "sudo resize_reiserfs -s '$PARTITION'" $LINENO "$VERBOSE"
+                run_command "sudo resize_reiserfs '$PARTITION'" $LINENO "$VERBOSE"
                 if (( $? )); then return 1; fi
             else
-                ui_msg_error $LINENO "reiserfs can only be grown (max). Shrinking is not supported."
+                ui_msg_error $LINENO "Only 'max' is supported for reiserfs here. To shrink manually: resize_reiserfs -s <size>"
                 return 1
             fi
             ;;
@@ -3959,7 +3980,7 @@ echo_debug $LINENO DIR="$MOUNTDIR" "$(df "$PARTITION")"
     sleep .5
     
     #echo
-    ui_msg "RESIZE" "$PARTITION filesystem resized to from $(bytes "$STARTING_SIZE" -h) to $(bytes "$(media_filesystem_size "$PARTITION" "$FS_TYPE")" -h)" green
+    ui_msg "RESIZE" "$PARTITION filesystem resized from $(bytes "$STARTING_SIZE" -h) to $(bytes "$(media_filesystem_size "$PARTITION" "$FS_TYPE")" -h)" green
 }
 
 
@@ -4411,16 +4432,16 @@ media_volume_add(){
     local LAST_PART=$(media_disk_partcount "$DEVICE")
         
     echo_white Add Volume to "$DEVICE" ...
-echo_debug $LINENO    
+#echo_debug $LINENO    
     # add a partition. 
     media_disk_addpartition "$DEVICE" "$SIZE" "$FORMAT" "$NAME" "$YESNO" "$VERBOSE"  # returns part num to NEW_PARTITION_NUM
     if (( $? )); then return 1; fi
-echo_debug $LINENO     
+#echo_debug $LINENO     
     if  ! (( $NEW_PARTITION_NUM )); then   # didn't get a new partition number
         echo_debug  $LINENO did not get a new partition number
         return 1
     fi
- echo_debug $LINENO    
+# echo_debug $LINENO    
 
     local PARTITION=$DEVICE$NEW_PARTITION_NUM
 
@@ -4429,7 +4450,7 @@ echo_debug $LINENO
   #  echo_white " - Zero the first 5K of the partition..."
   #  run_command "sudo dd if=/dev/zero of=$PARTITION bs=512 count=10K" $LINENO $VERBOSE
     
-echo_debug $LINENO   
+#echo_debug $LINENO   
     # format the new partition
     media_partition_format "$PARTITION" "$FORMAT" "$NAME" -y "$VERBOSE"
     if (( $? )); then
@@ -4945,7 +4966,6 @@ diskutil_install(){
 diskutil_update() {
     INTERFACE=${1:-"cli"}
     SUMMARY=${2:-"yes"}
-    local YES=${3:-"-n"}
     local YESNO
     getargs $*
       
