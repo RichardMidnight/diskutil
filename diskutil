@@ -2861,7 +2861,7 @@ media_partition_resize(){
 # echo_debug "$LINENO fs_type=$FS_TYPE"  
 
         # get FS_TYPE if not passed to function         
-        [[ -z $FS_TYPE ]] && FS_TYPE=(media_partition_fs_type $PARTITION)
+        [[ -z $FS_TYPE ]] && FS_TYPE=$(media_partition_fs_type "$PARTITION")
         
 
         # skip if fat32
@@ -3286,7 +3286,7 @@ media_filesystem_check() {
     local BUFFER=$(( $PART_SIZE - $FS_SIZE ))
     
     
-    if [[ $BUFFER -lt o ]]; then
+    if [[ $BUFFER -lt 0 ]]; then
         echo_debug $LINENO FS_SIZE="$FS_SIZE"  "$(bytes "$FS_SIZE" -h)"
         echo_debug $LINENO PART_SIZE="$PART_SIZE"  "$(bytes "$PART_SIZE" -h)"
         ui_msg "WARNING" "line $LINENO: Filesystem is $(bytes $(( - $BUFFER )) -h ) ($(( - $BUFFER )) bytes) LARGER than the partition!" red
@@ -3567,7 +3567,7 @@ media_filesystem_resize(){
    # fi
     
     # get FS_TYPE if not passed to function         
-    [[ -z $FS_TYPE ]] && FS_TYPE=(media_partition_fs_type $PARTITION)    
+    [[ -z $FS_TYPE ]] && FS_TYPE=$(media_partition_fs_type "$PARTITION")
     
     
     local STARTING_SIZE=$(media_filesystem_size "$PARTITION" "$FS_TYPE")
