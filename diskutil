@@ -558,7 +558,7 @@ do_beep(){
     TIME=${2:-.5}
     
     if [[ $SOUND = on ]] ; then
-        (speaker-test -t sign -f "$FREQ" > /dev/null & sleep "$TIME" && kill -9 $! ) > /dev/null
+        (speaker-test -t sign -f "$FREQ" > /dev/null & sleep "$TIME" && kill -9 $! 2>/dev/null) > /dev/null
       #  sleep .5  # to allow the beep to end
     fi
 }
@@ -2123,9 +2123,15 @@ media_disk_addpartition(){
       BEG=$(( $BEG + BLOCK_SIZE ))
       BEG=$(( $BEG / $BLOCK_SIZE * $BLOCK_SIZE ))
     fi
-    
-    
-    # set FS_TYPE       
+
+    # refuse if there is no room for even a minimal (1 MiB) partition
+    if [[ $(is_number "$BEG") = true ]] && [[ $(is_number "$DEVICE_SIZE") = true ]] && (( BEG + 1048576 > DEVICE_SIZE )); then
+        ui_msg_error $LINENO "No free space on $DEVICE - the disk is already fully partitioned"
+        echo "Delete or resize an existing partition first, then retry adding a volume."
+        return 1
+    fi
+
+    # set FS_TYPE
     if [[ $FORMAT = exfat ]]; then
 		FS_TYPE=ntfs
     else
@@ -2167,6 +2173,12 @@ media_disk_addpartition(){
     END=$(media_disk_align "$DEVICE" $END rounddown )
     if [[ $(is_number "$END") = true ]]; then
         END=$(( $END -1 ))
+    fi
+
+    # never exceed the end of the disk (parted would silently clamp to a smaller partition)
+    if [[ $(is_number "$END") = true ]] && [[ $(is_number "$DEVICE_SIZE") = true ]] && (( END + 1 > DEVICE_SIZE )); then
+        echo_red  $LINENO  "WARNING: requested size exceeds free space on $DEVICE - partition will be smaller than requested"
+        END=$(( DEVICE_SIZE - 1 ))
     fi
     
 
@@ -2714,7 +2726,7 @@ echo_debug "$LINENO RUNNING GET FS_TYPE ====================== ...    "
     echo "$FS_TYPE"
     
     if [[ -z $FS_TYPE ]]; then
-        ui_msg_error $LINENO "$LINENO Failed to get fs_type ..."
+        echo_debug $LINENO "No filesystem detected on $PARTITION (new or empty partition)"
         return 1
     fi
 }
@@ -2776,6 +2788,7 @@ media_partition_format(){
     
     local SIZE=$(bytes "$(media_partition_size "$PARTITION")" -h)
     local FS_TYPE=$(media_partition_fs_type "$PARTITION")
+    [[ -z $FS_TYPE ]] && FS_TYPE="(unformatted)"
 
 
     (( $(ui_yesno "ERASE MEDIA" "WARNING!  Do you want to erase '$SIZE' '$FS_TYPE' '$PARTITION' as '$FORMAT'" "$YESNO") )) || return
@@ -2788,7 +2801,7 @@ media_partition_format(){
     
     # write zeros to partition?
     echo "Zero the first 2K of '$PARTITION'..."
-    run_command "sudo dd if=/dev/zero of=$PARTITION bs=512 count=4K" $LINENO "$VERBOSE"
+    run_command "sudo dd if=/dev/zero of=$PARTITION bs=512 count=4" $LINENO "$VERBOSE"
     if (( $? )); then return 1; fi
     
     echo "Making the fileystem ..."
