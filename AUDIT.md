@@ -15,7 +15,7 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 5 | `info` | 94 | PASS | trivially correct but DEAD (no callers; baseline SC2317 — left per policy) |
 | 6 | `env_installer` | 99 | FIX | unknown-distro empty-result → clear error + return 1 |
 | 7 | `env_removal` | 120 | FIX | same unknown-distro guard as #6 |
-| 8 | `env_package_in_use` | 139 | — | known: apt-only (zypper rm danger) |
+| 8 | `env_package_in_use` | 139 | FIX | apt chain-detection was dead (1-space indent test vs 2-space real; flowed list lines) → tokenize + self-exclude. Verified: libc-bin IN-USE (cloud-init,locales), bash IN-USE (essential), exfatprogs not-in-use. Non-apt distros still unguarded (known limitation, no change) |
 | 9 | `env_root_device` | 162 | PASS | audited in initDisk pass (410db81) |
 | 10 | `env_root_disk` | 168 | PASS | audited in initDisk pass (410db81) |
 | 11 | `env_install_tools` | 203 | — | |
@@ -117,3 +117,6 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 2026-09 | setup | ledger created; PASS = prior passes (6155a6e, c631283, 1ffd7d5, 410db81, ac8f5e1) |
 | 2026-09 | #1 color echoes (49–52) | PASS, no change |
 | 2026-09 | #2 echo_debug (55) | FIX: DEBUG=on/off toggle (default off, rc-0 no-op), overridable via env |
+| 2026-9 | #6 env_installer | FIX: empty-result guard for unknown distro (f7b6add) |
+| 2026-9 | #7 env_removal | FIX: same empty-result guard (b9590ac) |
+| 2026-9 | #8 env_package_in_use | FIX: apt chain-detection awk (indent + flowed lines), tokenized self-exclusion |

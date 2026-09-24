@@ -159,7 +159,7 @@ env_package_in_use(){
             return 0
         fi
         # other installed packages would be removed in the chain -> in use
-        local OTHERS=$(echo "$SIM" | awk '/will be REMOVED:/{f=1;next} f && /^ [^ ]/{print} f && !/^ /{exit}' | tr ' ' '\n' | grep -v "^$PKG$" | tr '\n' ' ')
+        local OTHERS=$(echo "$SIM" | awk '/will be REMOVED:/{f=1;next} f && /^ +[^ ]/{print} f && !/^ /{exit}' | tr ' ' '\n' | grep -v "^$PKG$" | grep -v '^$' | tr '\n' ' ')
         if [[ -n $OTHERS ]]; then
             return 0
         fi
