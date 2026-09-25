@@ -29,7 +29,7 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 18 | `do_beep_down` | 573 | PASS | descending chirp, ditto |
 | 19 | `get_elapsed_time` | 579 | PASS | DEAD (no callers); arithmetic sound if ever used; left per policy |
 | 20 | `do_countdown` | 588 | FIX | added `local INPUT`; deleted dead `MSG=$(echo "$MSG.$i")` (undefined $i, unused). y/other/timeout rc 0/2/0 verified; lint -2 (SC2116, SC2154) |
-| 21 | `get_ver_to_int` | 614 | — | |
+| 21 | `get_ver_to_int` | 614 | FIX | parts/val were global → local (leak proven+fixed); behavior verified 1.2.3→1002003, 1.2→1002000, abc→0 |
 | 22 | `is_number` | 624 | PASS | audited in earlier quoting/bugfix passes |
 | 23 | `info_validate_num` | 646 | — | |
 | 24 | `bytes` | 678 | PASS | read in resize pass (base/suffix logic) |
@@ -127,3 +127,4 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 2026-9 | #13 env_install_smarttools | PASS | DEAD (no callers); landmine noted for future |
 | 2026-9 | #16 do_beep | FIX | FREQ/TIME made local |
 | 2026-9 | #20 do_countdown | FIX | `local INPUT`; deleted dead `MSG=$(echo "$MSG.$i")` |
+| 2026-9 | #21 get_ver_to_int | FIX | parts/val made local (were leaking global) |
