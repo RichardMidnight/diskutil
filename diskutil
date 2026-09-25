@@ -1935,6 +1935,7 @@ media_disk_verify() {
     
     local YESNO
     local VERBOSE
+    local SCOPE=${4:-disk}     # "volume" = called from 'verify <partition>' (no all-partitions sweep); "disk" = verifyDisk/repair (offers sweep)
     getargs $*
      
     echo_white "Verify Disk '$DISK' ..." 
@@ -1968,7 +1969,7 @@ media_disk_verify() {
     echo "The partition table on disk '$DISK' appears to be OK"
 
 
-    if (( $(ui_yesno "Verify partitions" "verify all $PART_COUNT partitions on '$DISK' " "$YESNO") )); then
+    if [[ $SCOPE = disk ]] && (( $(ui_yesno "Verify partitions" "verify all $PART_COUNT partitions on '$DISK' " "$YESNO") )); then
        for PART in $(seq 1 "$PART_COUNT"); do
             [[ $DISK == *mmcblk* || $DISK == *nvme* ]] && PART="p$PART"
             media_filesystem_check "$DISK""$PART" "$VERBOSE"
@@ -4775,7 +4776,7 @@ media_volume_verify(){
     #  Verify Disk ..... 
     echo  
     echo_white "Verify step 1 "
-    media_disk_verify "$DISK" "$YESNO" "$VERBOSE"
+    media_disk_verify "$DISK" "$YESNO" "$VERBOSE" volume     # disk/partition-table check only; the target partition itself is checked in step 3
     if (( $? )); then return 1 ; fi
     
     
