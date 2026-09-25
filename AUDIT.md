@@ -55,7 +55,7 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 44 | `media_disk_blocksize` | 1158 | PASS | `--getbsz` bytes as all 6 consumers expect (comment "4095" = cosmetic typo for 4096) |
 | 45 | `media_disk_listdisks` | 1167 | PASS | TYPE=disk filter correct |
 | 46 | `media_disk_align` | 1190 | PASS | `$(is_number …) = true` string idiom correct; 100% passthrough + clamp by design; roundup idiom correct |
-| 47 | `media_disk_first_available_byte` | 1227 | — | |
+| 47 | `media_disk_first_available_byte` | 1227 | FIX | fresh-disk bogus `religned from  to 1048576` debug line (empty→0 arithmetic) → `-n` guard. Alignment math verified exact across boundaries |
 | 48 | `media_filesystem_ismounted` | 1281 | — | |
 | 49 | `media_filesystem_mountpoint` | 1304 | — | |
 | 50 | `media_filesystem_min` | 1333 | — | mostly read (fat/exfat/ntfs); reconfirm rest |
@@ -134,3 +134,4 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 2026-9 | #34 media_device_partnum | FIX | dead is_number guard → rc-based `is_number … >/dev/null` |
 | 2026-9 | #37 media_device_name | FIX | 10+ partition mangle (mmcblk0p10) → anchored trailing-digit strip |
 | 2026-9 | #42 media_disk_serial | FIX | `-o vendor,model,serial` → `-o serial` (bare serial) |
+| 2026-9 | #47 media_disk_first_available_byte | FIX | spurious fresh-disk `religned` debug line → `-n` guard |

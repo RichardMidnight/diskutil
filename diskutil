@@ -1273,7 +1273,7 @@ media_disk_first_available_byte(){
         BEG=$(( 1024 * 1024 ))
     fi
  
-    if [[ $BEG_UNALIGNED -ne $BEG ]]; then
+    if [[ -n $BEG_UNALIGNED && $BEG_UNALIGNED -ne $BEG ]]; then
         echo_debug Beginning religned from $BEG_UNALIGNED to $BEG
     fi
     
