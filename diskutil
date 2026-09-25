@@ -1853,9 +1853,10 @@ media_disk_test () {
     
     local SERIAL=$(media_disk_serial "$DISK")
     local SIZE=$(bytes "$(media_device_size "$DISK")" -h)
+    local PARTCOUNT=$(media_disk_partcount "$DISK")
 
     
-    (( $(ui_yesno "Test Disk" "Unmount and verify all $PARTCOUNT partitons on '$DISK' " "$YESNO") )) || return
+    (( $(ui_yesno "Test Disk" "Unmount and verify all $PARTCOUNT partitions on '$DISK' " "$YESNO") )) || return
 
     
     #echo "DISK: $DISK '$SERIAL' $SIZE"
@@ -1863,7 +1864,6 @@ media_disk_test () {
     if (( $? )); then return 1; fi
     
     local PT_TYPE=$(media_disk_pt_type "$DISK")
-    local PARTCOUNT=$(media_disk_partcount "$DISK")
     echo "PARTITION TABLE: '$PT_TYPE' PARTITIONS: '$PARTCOUNT'"
     if (( $? )); then return 1; fi
     
@@ -1878,6 +1878,7 @@ media_disk_test () {
         for PART in $PARTITION_LIST; do
 			echo
 			sleep .5
+			[[ $DISK == *mmcblk* || $DISK == *nvme* ]] && PART="p$PART"
 			media_filesystem_check "$DISK""$PART" "$YESNO" "$VERBOSE"
             (( ! $? )) && do_beep_up || do_beep_down  
        done
@@ -1967,8 +1968,9 @@ media_disk_verify() {
     echo "The partition table on disk '$DISK' appears to be OK"
 
 
-    if (( ! $(ui_yesno "Verify partitions" "verify all $PART_COUNT partitions on '$DISK' " "$YESNO") )); then
+    if (( $(ui_yesno "Verify partitions" "verify all $PART_COUNT partitions on '$DISK' " "$YESNO") )); then
        for PART in $(seq 1 "$PART_COUNT"); do
+            [[ $DISK == *mmcblk* || $DISK == *nvme* ]] && PART="p$PART"
             media_filesystem_check "$DISK""$PART" "$VERBOSE"
        done
     fi

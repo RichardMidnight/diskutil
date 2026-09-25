@@ -71,9 +71,10 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 59 | `media_partition_end` | 1720 | FIX | per-part `cut -f3` ✓; whole-disk branch returned `1` as end → now disk size (last byte); #61's 0-partition path consistent again |
 | 60 | `media_partition_size` | 1750 | FIX | per-part `cut -f4` ✓; whole-disk branch returned `1` as size → now disk size |
 | 61 | `media_partition_max` | 1784 | PASS | with #59 fix, 0-partition path returns disk end as commented; free-space extension logic ✓; `PART_START` unused (baseline) |
-| 62 | `media_disk_info` | 1881 | — | |
-| 63 | `media_disk_verify` | 1917 | — | |
-| 64 | `media_disk_repair` | 1971 | — | |
+| 61b | `media_disk_test` | 1838 | FIX | (queue gap, like #10b/#49b). prompt used `$PARTCOUNT` before assignment (was empty at 1858; "partitons" typo) → compute early + typo; loop built `mmcblk02`/`nvme0n12` → `p` prefix now. notes: `(( $? ))` after `echo $(friendlyname…)` dead (echo's rc); checktarget error keeps going (no return) |
+| 62 | `media_disk_info` | 1888 | PASS | display-only (parted print free, blocksize, lsblk -t/-f); verbose gating ✓ |
+| 63 | `media_disk_verify` | 1924 | FIX | 1970 `(( ! $(ui_yesno …)))` was INVERTED (YES skipped, NO ran the verify loop) → un-negated (every other `!` site is a cancel-guard — correct); 1972 loop now mmcblk/nvme-safe; pt_type case + rc checks ✓; "initialied" typo noted |
+| 64 | `media_disk_repair` | 1978 | PASS | delegates to verify; `$YESNO` passed as arg re-parses harmlessly via getargs ("no changes made" matches its comment) |
 | 65 | `media_disk_initialize` | 1996 | PASS | initDisk review (410db81) |
 | 66 | `media_disk_addpartition` | 2059 | — | mostly (guard 410db81, geometry); reconfirm rest |
 | 67 | `media_disk_delpartition` | 2261 | — | |
@@ -139,3 +140,4 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 2026-9 | #48 ismounted call-sites | FIX | two dead `= true` mount-guards (3524 repair / 4614 resize) → `-n $(…)` |
 | 2026-9 | #53 media_filesystem_size | FIX | xfs restore inverted → `[[ -z $WAS_MOUNTED ]]`; `$currentsize`→`$blockcount` |
 | 2026-9 | #58/#59/#60 whole-disk branches | FIX | start was disk-size → `1`; end/size were `1` → disk size; #61 0-partition path now returns disk end. lint −1 (SC2005), ref→final19 |
+| 2026-9 | #61b/#63 test+verify loops | FIX | 1970 yesno gate un-inverted (YES=verify); mmcblk/nvme `p`-partition names in 1881/1972; #61b PARTCOUNT before prompt + "partitions" typo |
