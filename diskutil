@@ -1702,8 +1702,8 @@ media_partition_start(){
     fi
 
     # if whole disk
-    if [[ -z $PARTNUM ]] ; then   
-        echo "$(media_device_size "$DISK")"
+    if [[ -z $PARTNUM ]] ; then
+        echo 1
         return
     fi
     
@@ -1732,7 +1732,7 @@ media_partition_end(){
 
     # if whole disk
     if [[ -z $PARTNUM ]]; then
-        echo 1
+        media_device_size "$DISK"
         return
     fi    
     
@@ -1764,7 +1764,7 @@ media_partition_size(){
     
     # if whole disk
     if [[ -z $PARTNUM ]]; then
-        echo 1
+        media_device_size "$DISK"
         return
     fi    
     

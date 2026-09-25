@@ -63,14 +63,14 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 51 | `media_filesystem_name` | 1454 | PASS | label via lsblk with 2×0.5s retries; empty = no label (callers at 2935/3685/3716 handle) |
 | 52 | `media_filesystem_size_alt` | 1481 | PASS | mount→lsblk fssize→restore state; re-mount in the already-mounted branch is a benign no-op (end state correct) |
 | 53 | `media_filesystem_size` | 1496 | FIX | xfs mount-restore was INVERTED (unmounted user's mounted vol, left unmounted vols mounted; 9 call sites) → `[[ -z $WAS_MOUNTED ]]`. Also `$currentsize`→`$blockcount` (ext guard typo, inert). lint -2 (SC2004/SC2154, ref→final18) |
-| 54 | `media_filesystem_used` | 1605 | — | |
-| 55 | `media_disk_partition_list` | 1628 | — | |
-| 56 | `media_disk_partcount` | 1649 | — | |
-| 57 | `media_partition_record` | 1677 | — | |
-| 58 | `media_partition_start` | 1686 | — | |
-| 59 | `media_partition_end` | 1713 | — | |
-| 60 | `media_partition_size` | 1743 | — | |
-| 61 | `media_partition_max` | 1777 | — | |
+| 54 | `media_filesystem_used` | 1608 | PASS | fat-only; `bytes/cluster`(f2) × `N/M` used-clusters parse self-consistent; sandbox blocks live test; only caller is #50 fat branch (hard-exits if non-numeric) |
+| 55 | `media_disk_partition_list` | 1635 | PASS | parted `-m print` in on-disk order ✓; `NAME` unused (baseline SC2034); `PARTITIONS` leaks global (minor) |
+| 56 | `media_disk_partcount` | 1656 | PASS | `${#PARTITIONS[@]}` count, 0 when empty ✓ |
+| 57 | `media_partition_record` | 1684 | PASS | DEAD — 0 live callers (3198 commented); `$DEVICE` is properly defined via media_device_name |
+| 58 | `media_partition_start` | 1693 | FIX | per-part `cut -f2` ✓; whole-disk branch returned disk SIZE as start → now `1` |
+| 59 | `media_partition_end` | 1720 | FIX | per-part `cut -f3` ✓; whole-disk branch returned `1` as end → now disk size (last byte); #61's 0-partition path consistent again |
+| 60 | `media_partition_size` | 1750 | FIX | per-part `cut -f4` ✓; whole-disk branch returned `1` as size → now disk size |
+| 61 | `media_partition_max` | 1784 | PASS | with #59 fix, 0-partition path returns disk end as commented; free-space extension logic ✓; `PART_START` unused (baseline) |
 | 62 | `media_disk_info` | 1881 | — | |
 | 63 | `media_disk_verify` | 1917 | — | |
 | 64 | `media_disk_repair` | 1971 | — | |
@@ -138,3 +138,4 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 2026-9 | #47 media_disk_first_available_byte | FIX | spurious fresh-disk `religned` debug line → `-n` guard |
 | 2026-9 | #48 ismounted call-sites | FIX | two dead `= true` mount-guards (3524 repair / 4614 resize) → `-n $(…)` |
 | 2026-9 | #53 media_filesystem_size | FIX | xfs restore inverted → `[[ -z $WAS_MOUNTED ]]`; `$currentsize`→`$blockcount` |
+| 2026-9 | #58/#59/#60 whole-disk branches | FIX | start was disk-size → `1`; end/size were `1` → disk size; #61 0-partition path now returns disk end. lint −1 (SC2005), ref→final19 |
