@@ -600,6 +600,7 @@ get_elapsed_time() {
 do_countdown(){  
     local MAX=${1:-10}
     local MSG=${2:-"Pausing for $MAX seconds... Press y to continue immediately or any other key to stop"}
+    local INPUT
  
    # echo "Pausing for $MAX seconds... Press y to continue immediately or any other key to stop"
     echo "$MSG"
@@ -617,7 +618,6 @@ do_countdown(){
                 return 2
             fi
         fi 
-        MSG=$(echo "$MSG.$i")
     done 
     echo ...
 }

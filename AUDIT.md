@@ -25,10 +25,10 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 14 | `media_filesystem_install` | 282 | PASS | FS support pass (6155a6e c631283) |
 | 15 | `media_filesystem_uninstall` | 460 | PASS | FS pass + in-use gate (c631283) |
 | 16 | `do_beep` | 556 | FIX | FREQ/TIME were global; made local (no lint cost) |
-| 17 | `do_beep_up` | 567 | — | |
-| 18 | `do_beep_down` | 573 | — | |
-| 19 | `get_elapsed_time` | 579 | — | |
-| 20 | `do_countdown` | 588 | — | |
+| 17 | `do_beep_up` | 567 | PASS | ascending chirp via audited do_beep; names/behavior match |
+| 18 | `do_beep_down` | 573 | PASS | descending chirp, ditto |
+| 19 | `get_elapsed_time` | 579 | PASS | DEAD (no callers); arithmetic sound if ever used; left per policy |
+| 20 | `do_countdown` | 588 | FIX | added `local INPUT`; deleted dead `MSG=$(echo "$MSG.$i")` (undefined $i, unused). y/other/timeout rc 0/2/0 verified; lint -2 (SC2116, SC2154) |
 | 21 | `get_ver_to_int` | 614 | — | |
 | 22 | `is_number` | 624 | PASS | audited in earlier quoting/bugfix passes |
 | 23 | `info_validate_num` | 646 | — | |
@@ -126,3 +126,4 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 2026-9 | #12 env_list_filesystems | PASS | all mappings verified; live run clean |
 | 2026-9 | #13 env_install_smarttools | PASS | DEAD (no callers); landmine noted for future |
 | 2026-9 | #16 do_beep | FIX | FREQ/TIME made local |
+| 2026-9 | #20 do_countdown | FIX | `local INPUT`; deleted dead `MSG=$(echo "$MSG.$i")` |
