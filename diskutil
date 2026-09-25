@@ -2507,12 +2507,13 @@ media_disk_format(){
     
     local PART_NUM=$(media_disk_partcount "$DEVICE")
     local PARTITION=$DEVICE$PART_NUM
+    [[ $DEVICE == *mmcblk* || $DEVICE == *nvme* ]] && PARTITION=$DEVICE"p$PART_NUM"
     if [[ $PART_NUM -ne $(( $LAST_PART + 1 )) ]]; then
         ui_msg_error $LINENO "Can't find new partition number"
     fi 
   
     echo_white " - Step 3: Format the partition..."
-    media_partition_format "$PARTITION" "$FORMAT" "$NAME" -y "$VERBOSE"
+    media_partition_format "$PARTITION" "$FORMAT" "$NAME" -y "$VERBOSE" || return 1
     echo_green " - Step3: DONE"
   
     sleep .5
@@ -2630,7 +2631,7 @@ echo_debug  $LINENO "$TYPE"
         return 3
     fi
 
-    if [[ $TYPE = disk ]] && [[ $DISK = $env_root_device ]]; then
+    if [[ $TYPE = disk ]] && [[ $DISK = $(env_root_disk) ]]; then
         ui_msg_error $LINENO "Can not wipe root Disk"
         return 3
     fi

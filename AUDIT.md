@@ -80,9 +80,10 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 67 | `media_disk_delpartition` | 2274 | FIX | 2285 `PARTITION=$DEVICE$PARTNUM` built `mmcblk02`/`nvme0n11` (invalid) → checktarget@2296 rejected → delPartition failed on ALL SD/NVMe disks; now mmcblk/nvme-safe name (parted `rm` keeps bare number ✓). 2321 `$PART_NO` undef → `$PARTNUM` (SC2153 −1). note: final `parted rm` has no explicit rc check (implicit) |
 | 68 | `media_disk_mount` | 2327 | FIX | 2356 `"$DISK""$PART"` → `mmcblk02` in live mount loop → `p$PART` prefix; count=0 → whole-disk-volume branch correct ✓ |
 | 69 | `media_disk_unmount` | 2361 | FIX | 2377 `exit 1` → `return 1` (killed session; siblings use return). live path sound (df-list + multi-device umount). notes: 2390-2401 DEAD block (after `return`, has invalid `umount -q`) — left per dead-code rule; unanchored `grep "$DISK"` safe (disk name = partition prefix) |
-| 70 | `media_disk_eject` | 2391 | — | |
-| 71 | `media_disk_format` | 2417 | — | |
-| 72 | `media_device_wipe` | 2555 | — | FLAGGED (from #9 call-site walk): line 2628 `[[ $DISK = $env_root_device ]]` references a VARIABLE (empty) → root-disk guard is dead; `wipe mmcblk0 disk` would pass the guard. Fix belongs to this item: `$(media_device_name "$(env_root_device)")` |
+| 70 | `media_disk_eject` | 2406 | PASS | yesno gate ✓ (action-body, no negation); unmount + rc ✓; `udisksctl power-off` last (implicit rc propagates). note: usage-guard 2409 `exit` where siblings `return` |
+| 71 | `media_disk_format` | 2432 | FIX | 2509 `PARTITION=$DEVICE$PART_NUM` → `/dev/mmcblk01` invalid → Step 3 format + mount failed on SD/NVMe → mmcblk/nvme-safe name (`/dev/`-prefixed form); Step 3 had NO rc check (failed format still said "Step3: DONE" + mounted) → `\|\| return 1`. notes: ROOT 2459 + TYPE 2460 dead (root refusal via nested initDisk ✓); SIZE double-declared (2447/2483); flow unmount→init→add(max)→format→mount ✓ |
+| 71b | `media_device_info` | 2526 | PASS | queue gap (3rd: #10b/#49b/#61b → this). checktarget no-type (either ok) ✓; part branch → filesystem_info + partition_os ✓. note: 2529 fullname evaluated BEFORE the `-z $1` guard (2533) — harmless (fullname has own empty-check); live from `info*` @5168 |
+| 72 | `media_device_wipe` | 2571 | FIX | FLAG (from #9) confirmed: 2635 `[[ $DISK = $env_root_device ]]` read an UNSET VARIABLE (`env_root_device` is the function) → root-disk guard DEAD (would wipe the boot disk) → `$(env_root_disk)`, same idiom as 2037/2164. SC2154 −1, SC2053 −1 |
 | 73 | `retire_maybe_media_partition_pt_type` | 2683 | — | |
 | 74 | `media_partition_fs_type` | 2694 | — | read (parted→lsblk fallback); formal PASS |
 | 75 | `media_partition_format` | 2758 | — | |
@@ -143,3 +144,4 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 2026-9 | #61b/#63 test+verify loops | FIX | 1970 yesno gate un-inverted (YES=verify); mmcblk/nvme `p`-partition names in 1881/1972; #61b PARTCOUNT before prompt + "partitions" typo |
 | 2026-9 | #66 addpartition | FIX | fat16+max now capped at BEG+4090M (was unbounded → oversized fat16); 2221/2262 verbose prints were dead (`(( $VERBOSE ))` always false) → `[[ $VERBOSE = -v ]]`; SC2004 −1, ref→final20 |
 | 2026-9 | #67/#68 delpart+mount names | FIX | mmcblk/nvme p-names: delpartition 2285 (was failing checktarget on SD/NVMe disks) + mount loop 2356; #67 `$PART_NO`→`$PARTNUM`; #69 `exit`→`return`. SC2153 −1, ref→final21 |
+| 2026-9 | #71/#72 erase+format | FIX | eraseDisk p-name on mmcblk/nvme (/dev/ form); Step 3 rc check (`\|\| return 1`, added 0 lint); wipe root-disk guard was DEAD (unset var vs function) → `$(env_root_disk)`. SC2154 −1, SC2053 −1, ref→final22 |
