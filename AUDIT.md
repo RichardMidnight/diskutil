@@ -109,7 +109,7 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 94 | `media_volume_repair` | 4826 | PASS | thin wrapper: usage ✓, checktarget part ✓, delegates to #81-fixed media_filesystem_repair with rc ✓. notes: `media_device_fullname` called before usage guard (quiet debug echo only, harmless); FS_TYPE auto-detected in callee ✓ |
 | 95 | `media_clone` | 4866 | FIX | live but fully broken: dd/pv lines COMMENTED OUT; `media_size`/`BS`/`INDEV` undefined; TARGET unused → `diskutil clone SRC DST` printed garbage sizes + "command not found" noise and **exited 0 without copying anything**. Replaced body with honest refusal: usage guard, explicit "not implemented yet - nothing was copied" + `sudo dd if= of= bs=4M conv=fsync` hint, `do_beep_down`, return 1. stub-tested (no-args / with-args → rc1 + text). LINT improved (−8 SC2004, −3 SC2034, SC2319/2320 down) |
 | 96 | `whiptail_calc_wt_size` | 4870 | — | |
-| 97 | `menu` | 4899 | — | FLAGGED: "Change settings" (4928) calls `menu_settings` which is NOT defined |
+| 97 | `menu` | 4917 | FIX | live (dispatch `menu)`) legacy pisafe shell: 8 callees undefined (config_var_get_settings, do_list_info, menu_settings, menu_tools, media_backup, media_restore, pisafe_help, pisafe_about; each = "command not found"); INFO/MOUNT/UNMOUNT/FirstAid/Format items fell to `*) return` = silent menu exit. Replaced body with honest refusal + verified CLI equivalents (list/info/mount/umount/verifyFS/repair/help). Removed the menu-only `WT_MENU_HEIGHT` set-line my change orphaned (would have been a NEW SC2034); `WT_MENU_HEIGHT_TALL` (untouched, still flagged) kept per baseline. stub-tested rc1. LINT: deltas all decreases |
 | 98 | `diskutil_install` | 4947 | — | |
 | 99 | `diskutil_update` | 4966 | — | dead-local-YES fixed (ac8f5e1); rest reconfirm |
 | 100 | `diskutil_terminology` | 5015 | — | |
@@ -162,3 +162,5 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 2026-9 | #93 volume_verify | PASS | 3-step (disk rc ✓, part -e ✓, fs_check rc ✓ = #80-fixed); names from user arg (no concat) |
 | 2026-9 | #94 volume_repair | PASS | thin wrapper → #81-fixed media_filesystem_repair with rc ✓ |
 | 2026-9 | #95 media_clone | FIX | body was fully broken (dd/pv commented out; media_size/BS/INDEV undefined; TARGET unused) → printed garbage and exited 0 without copying anything → replaced with honest refusal + dd hint, return 1; stub-tested; LINT deltas all decreases |
+| 2026-9 | #96 whiptail_calc_wt_size | PASS | size clamps ok (120 cap, 60/178 floor-ceil); non-tty tput-fail → 0 (pre-existing, harmless) |
+| 2026-9 | #97 menu | FIX | legacy pisafe shell: 8 undefined callees (each click = command-not-found); 5 items (INFO/MOUNT/UNMOUNT/FirstAid/Format) fell to `*) return` = silent exit → honest refusal + CLI equivalents; orphaned WT_MENU_HEIGHT set-line removed (prevented NEW SC2034); stub-tested; LINT deltas all decreases |

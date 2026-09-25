@@ -4906,7 +4906,6 @@ whiptail_calc_wt_size() {
         WT_WIDTH=80
     fi
 
-    WT_MENU_HEIGHT=$(($WT_HEIGHT-7))
     WT_MENU_HEIGHT_TALL=$(($WT_HEIGHT_TALL-7))
 
     WT_MB_HEIGHT=$WT_HEIGHT
@@ -4915,48 +4914,22 @@ whiptail_calc_wt_size() {
 
 
 menu() {
-       INTERFACE="gui"
-    config_var_get_settings
-    while true
-    do
-        whiptail_calc_wt_size
-        MENU_CHOICE=$(whiptail --clear --backtitle "$BACKTITLE" --title "MAIN MENU" --ok-button "Select" --cancel-button "Exit" --menu "    " $WT_HEIGHT $WT_WIDTH $WT_MENU_HEIGHT \
-                "LIST"      "   List media and image files" \
-                "INFO"     "  " \
-                "MOUNT"    "   Mount media" \
-                "UNMOUNT"   "   " \
-                "  "        "   " \
-                "FirstAid"  "  "\
-                "Format"  "   Erase" \
-                "SETTINGS"  "   Change settings" \
-                "TOOLS"     "   Various tools"\
-                 "  "        "   " \
-                 "HELP"     "   Help"\
-                3>&1 1>&2 2>&3)
- 
-        whiptail_calc_wt_size        
-        case $MENU_CHOICE in
-            BACKUP)         media_backup  ;;
-            
-            RESTORE)        media_restore ;;
-            
-            LIST)           echo "Getting list of images ready..."
-                            ui_msg LIST "$(do_list_info "$DEFAULT_PATH")"  ;;
-            
-            SETTINGS)       menu_settings    ;;
-            
-            TOOLS)          menu_tools       ;;
-            
-            HELP)           ui_msg HELP "$(pisafe_help)" ;;
-            
-            ABOUT)          ui_msg ABOUT "$(pisafe_about)"  ;;     
-             
-            "  "*)          ;;
-            
-            * )             return       ;;
-        esac
-    done
-    
+    # The interactive (whiptail) menu is a legacy shell from the old
+    # "pisafe" program.  Every handler it invokes is gone from this codebase
+    # (config_var_get_settings, do_list_info, menu_settings, menu_tools,
+    # media_backup, media_restore, pisafe_help, pisafe_about) and selecting
+    # INFO/MOUNT/UNMOUNT/FirstAid/Format used to just exit the menu.
+    # Refuse honestly instead of presenting a broken menu.
+    echo "The interactive menu is not implemented in diskutil (legacy gui shell)."
+    echo "Use the CLI equivalents instead:"
+    echo "   list        : diskutil list"
+    echo "   info        : diskutil info <disk|volume>"
+    echo "   mount       : diskutil mount <volume>"
+    echo "   unmount     : diskutil umount <volume>"
+    echo "   verify/fix  : diskutil verifyFS <volume>   |   diskutil repair <volume>"
+    echo "   help        : diskutil help"
+    do_beep_down
+    return 1
 }
 
 
