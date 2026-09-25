@@ -698,13 +698,13 @@ bytes(){
     local OUTPUT=${2:-"-h"};  #human or bytes
     
   #  local BASE=$(echo $BYTES | tr -cd '[[:digit:]]' )
-   local BASE=$(echo "$BYTES" | tr -cd '[[0123456789]]' )
+   local BASE=$(echo "$BYTES" | tr -cd '[[0123456789.]]' )   # keep decimal point (.5g, 1.5g)
     local SUFFIX=$(echo "$BYTES" | tr -cd '[[kmgtbKMGTB]]' )
 
 #echo_debug $LINENO $BASE $SUFFIX
 
 
-    if ! $(is_number "$BASE"); then
+    if ! $(is_number "${BASE/.}"); then   # strip one decimal point so .5 / 1.5 pass
 #echo_debug $LINENO "'$BASE' not a number    "
         return 1
     fi
@@ -765,10 +765,10 @@ bytes(){
 #    echo_debug $LINENO $1 $SUFFIX
         case $SUFFIX in
             b|B|"")         echo "$BASE"            ;;
-            k|K|kb|KB)      echo $(($BASE*1024))   ;;
-            m|M|mb|MB)      echo $(($BASE*1024*1024))   ;;
-            g|G|gb|GB)      echo $(($BASE*1024*1024*1024))      ;;
-            t|T|tb|TB)      echo $(($BASE*1024*1024*1024*1024))  ;;
+            k|K|kb|KB)      echo "scale=0;($BASE*1024)/1" | bc            ;;   # bc: decimals OK, no octal/overflow quirks, /1 = integer
+            m|M|mb|MB)      echo "scale=0;($BASE*1024*1024)/1" | bc       ;;
+            g|G|gb|GB)      echo "scale=0;($BASE*1024*1024*1024)/1" | bc  ;;
+            t|T|tb|TB)      echo "scale=0;($BASE*1024*1024*1024*1024)/1" | bc  ;;
             *)              ui_msg_error $LINENO "unknown suffix '$SUFFIX'"   ;;
         esac
     fi
