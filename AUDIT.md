@@ -20,11 +20,11 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 10 | `env_root_disk` | 168 | PASS | audited in initDisk pass (410db81) |
 | 10b | `env_which` | 183 | FIX | triple-sequential apt/pacman/dnf install (no detection; broken on zypper/xbps, double-fail noise on Debian) → single per-distro install via audited `env_installer`; stdout kept quiet |
 | 11 | `env_install_tools` | 203 | FIX | removed stray trailing `-y` after package name in `udisksctl`) branch (broke pacman; flag already in installer string) |
-| 12 | `env_list_filesystems` | 236 | — | partially seen (FS pass) |
-| 13 | `env_install_smarttools` | 265 | — | |
+| 12 | `env_list_filesystems` | 236 | PASS | all 16 $FILESYSTEMS tokens mapped (vfat×3, mkswap×2, hfs+ literal, `*` rest); live run clean. `hfs`→`mkfs.hfs` is a $FILESYSTEMS data quirk the function honestly reports as Not installed |
+| 13 | `env_install_smarttools` | 265 | PASS | DEAD (no callers). Landmine noted: if ever enabled it runs all 5 distro sudo installs unconditionally (no -y flags) — fix with `env_installer` pattern when/if it's wired up |
 | 14 | `media_filesystem_install` | 282 | PASS | FS support pass (6155a6e c631283) |
 | 15 | `media_filesystem_uninstall` | 460 | PASS | FS pass + in-use gate (c631283) |
-| 16 | `do_beep` | 556 | — | |
+| 16 | `do_beep` | 556 | FIX | FREQ/TIME were global; made local (no lint cost) |
 | 17 | `do_beep_up` | 567 | — | |
 | 18 | `do_beep_down` | 573 | — | |
 | 19 | `get_elapsed_time` | 579 | — | |
@@ -123,3 +123,6 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 2026-9 | #8 env_package_in_use | FIX: apt chain-detection awk (indent + flowed lines), tokenized self-exclusion |
 | 2026-9 | #10b env_which | FIX: per-distro `which` install via env_installer (was unconditional apt+pacman+dnf) |
 | 2026-9 | #11 env_install_tools | FIX: stray trailing `-y` after package (pacman-breaking) removed |
+| 2026-9 | #12 env_list_filesystems | PASS | all mappings verified; live run clean |
+| 2026-9 | #13 env_install_smarttools | PASS | DEAD (no callers); landmine noted for future |
+| 2026-9 | #16 do_beep | FIX | FREQ/TIME made local |

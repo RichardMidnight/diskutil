@@ -566,8 +566,8 @@ media_filesystem_uninstall(){
 # ---------- Misc functions
 
 do_beep(){
-    FREQ=${1:-600}
-    TIME=${2:-.5}
+    local FREQ=${1:-600}
+    local TIME=${2:-.5}
     
     if [[ $SOUND = on ]] ; then
         (speaker-test -t sign -f "$FREQ" > /dev/null & sleep "$TIME" && kill -9 $! 2>/dev/null) > /dev/null
