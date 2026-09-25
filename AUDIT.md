@@ -43,9 +43,9 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 32 | `media_device_fullname` | 941 | PASS | empty→rc1 ✓; /dev/ prefix test ✓ |
 | 33 | `media_device_partname` | 959 | PASS | DEAD (0 callers); quirk noted: whole-disk ARM name would yield `p0` — moot while unused |
 | 34 | `media_device_partnum` | 971 | FIX | guard `! [[ $(is_number ...) ]]` could never fire (non-empty-string test always true) → `! is_number "$PARTNUM" >/dev/null` (rc-based, no output execution, no new lint). sda/abc now rc1; sda10→10, mmcblk0p12→12 exact |
-| 35 | `media_device_size` | 988 | — | |
-| 36 | `media_device_type` | 997 | — | |
-| 37 | `media_device_name` | 1012 | — | |
+| 35 | `media_device_size` | 988 | PASS | lsblk -b -n -d -o size clean; empty input fails safely |
+| 36 | `media_device_type` | 997 | PASS | 0.5s retry on empty = udev-race handling; empty-output contract consistent |
+| 37 | `media_device_name` | 1012 | FIX | grep-10 branch stripped ALL digits (mmcblk0p10→/dev/mmcblkp, nvme0n1p10→mangled) → anchored `s/[1-9][0-9]*$//` (+p variant); 11-case matrix now exact, embedded zeros preserved; lint -2 (SC2001/SC2143, ref→final17) |
 | 38 | `media_disk_friendlyname` | 1044 | — | |
 | 39 | `media_disk_pt_type` | 1054 | — | |
 | 40 | `media_device_checktarget` | 1070 | PASS | initDisk pass (live part guard / dead disk guard analyzed) |
@@ -132,3 +132,4 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 2026-9 | #24 bytes | FIX | TB→bytes `*2014`→`*1024` (1tb was 1.9667× too big) |
 | 2026-9 | #25 ui_countdown | FIX | `local SECONDS`→`CNT` (special-var rebase hazard) |
 | 2026-9 | #34 media_device_partnum | FIX | dead is_number guard → rc-based `is_number … >/dev/null` |
+| 2026-9 | #37 media_device_name | FIX | 10+ partition mangle (mmcblk0p10) → anchored trailing-digit strip |
