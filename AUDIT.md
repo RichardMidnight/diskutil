@@ -96,10 +96,10 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 81 | `media_filesystem_repair` | 3515 | FIX | btrfs arm had NO rc check → failed `btrfs check --repair` fell through to remount + green "Filesystem_repair OK" → `rc=$?` + `if (( $rc )); then return 1; fi` (zero new lint). ext arm: any-nonzero e2fsck failed it, but rc1 = errors CORRECTED (= success per man page) → `rc > 1` (0/1 ok; 2=uncorrected, 3+, 4(op), 8(prog) fail) — matrix verified. gates verified: yesno-proceed ✓, unmount + still-mounted check ✓, numeric WAS_MOUNTED restore ✓, `*)` proper error+rc ✓ |
 | 82 | `media_filesystem_rename` | 3698 | FIX | no arm had an rc check → failed label write still printed "'…' is now named '…'" (old name, assertive) → `rc=$?` after `esac` (case rc = arm cmd) + clear error + return 1. `ext4)` only → ext2/ext3 lsblk types fell into "Unknown filesystem" → `ext2\|ext3\|ext4`. verified: gate semantics + ext2/3/4 match. notes: NO-answer path still prints "is now named" (cosmetic, pre-existing); `ntfslabel $VERBOSE` breaks under `-v` (pre-existing); zfs no-op correct (labels immutable) |
 | 83 | `media_filesystem_resize` | 3714 | PASS | resize pass (ac8f5e1) |
-| 84 | `media_partition_os` | 3987 | — | |
+| 84 | `media_partition_os` | 4030 | PASS | os-release/Windows/ro/overlay scan logic ok; losetup-offset mount + retry + cleanup traced (leaves nothing mounted). notes: `media_volume_mount` inside was_mounted branch is a confusing no-op (harmless); mktemp -d dir never rmdir'd (1 empty dir/invocation); unanchored `grep /boot` in fstab (label-only) |
 | 85 | `media_disk_os` | 4097 | — | |
 | 86 | `media_volume_mount` | 4124 | — | |
-| 87 | `media_volume_unmount` | 4186 | — | |
+| 87 | `media_volume_unmount` | 4229 | FIX | live path = `ismounted → umount -q [-f]`; earlier `-q` alarm RETRACTED (verified `umount --help`: `-q,--quiet` is valid; `$FORCE`=`-f` only via --force) → but umount rc was DISCARDED (bare `return`) → `return $?` propagates run_command's ec (LINT flat). dead udisksctl/wait block below (4249+) left per house rule. notes: error text always shown by run_command; most callers ignore this rc |
 | 88 | `media_filesystem_info` | 4247 | — | |
 | 89 | `media_volume_badblocks` | 4375 | — | |
 | 90 | `media_volume_add` | 4410 | — | mostly (ENOSPC 1ffd7d5 + echo gates); reconfirm rest |
@@ -152,3 +152,7 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 2026-9 | #80 filesystem_check | FIX | btrfs check branch inverted (clean→failed; err+NO→repaired anyway; err+YES→not repaired) → sibling if/prompt/repair pattern; no-fs branch interactive under `-y` (missing `"$YESNO"`) → added. LINT flat vs final23 |
 | 2026-9 | #81 filesystem_repair | FIX | btrfs repair arm had no rc check (failed repair printed green OK) → rc check added; e2fsck rc1 (errors corrected) was reported Failed → `rc > 1` semantics (2=uncorrected/3+/4/8 still fail); LINT flat vs final23 |
 | 2026-9 | #82 filesystem_rename | FIX | failed label write still printed success line (no arm rc-checked) → rc gate after esac; ext2/ext3 refused as "Unknown" → e2label arm now ext2\|ext3\|ext4; LINT flat vs final23 |
+| 2026-9 | #84 partition_os | PASS | losetup-offset mount + retry/cleanup traced (leaves nothing mounted); scan logic ok. notes: was-mounted branch calls `media_volume_mount` (confusing no-op); mktemp dir never rmdir'd; unanchored `grep /boot` (label-only) |
+| 2026-9 | #85 disk_os | PASS | offset-based partition access works even on mmcblk (entry name only used as arg). notes: `...retrying...` can leak into captured `OS` on the rare losetup-retry path; globals not localed (house style) |
+| 2026-9 | #86 volume_mount | PASS | already-mounted early-return ok; yesno-action-body ok; udisksctl + 1 retry + rc gate ok. notes: udisksctl without sudo (run_command version commented) — pre-existing design; exits 0 silently if df never shows the mount within the ~1.75s wait |
+| 2026-9 | #87 volume_unmount | FIX | `-q` alarm RETRACTED (valid quiet flag; `-f` only via --force); umount rc was DISCARDED (bare `return`) → `return $?` propagates ec; LINT flat vs final23 |

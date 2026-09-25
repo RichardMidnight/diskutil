@@ -4244,6 +4244,7 @@ media_volume_unmount(){
     
    if [[ $(media_filesystem_ismounted "$PARTITION") ]]; then
         run_command "sudo umount $PARTITION -q $FORCE" $LINENO "$VERBOSE"
+        return $?
    fi     
    return 
    
