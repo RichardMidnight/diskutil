@@ -1908,7 +1908,7 @@ media_disk_info(){
     
     echo
     echo_white Disk topology
-    run_command "lsblk -t $DISK" $LINENO "$VERBOSE"
+    run_command "lsblk -t -o NAME,SIZE,FSTYPE,LABEL,MOUNTPOINT $DISK" $LINENO -v
 
     if [[ $VERBOSE = -v ]]; then
         echo
