@@ -3625,9 +3625,9 @@ media_filesystem_repair() {
             ;;
             
         ext2|ext3|ext4)    
-            run_command "sudo e2fsck -f -y $VERBOSE -C 0 $PARTITION" $LINENO "$VERBOSE" # from gparted
+            run_command "sudo e2fsck -f -y $VERBOSE -C 0 $PARTITION" $LINENO "$VERBOSE" # from gparted   # rc: 0=clean 1=corrected ok  2+=errors not corrected
             rc=$?
-            if (( $rc )); then
+            if (( rc > 1 )); then
                 ui_msg_error $LINENO "Failed with rc $rc"
                 return 1
                # info "Trying to recover corrupted filesystem - Phase 2"
@@ -3657,6 +3657,8 @@ media_filesystem_repair() {
             
         btrfs)
             run_command "sudo btrfs check --repair '$PARTITION' " $LINENO "$VERBOSE"
+            rc=$?
+            if (( $rc )); then return 1; fi
         ;;        
             
         f2fs)
