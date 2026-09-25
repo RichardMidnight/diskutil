@@ -1151,7 +1151,7 @@ media_disk_serial(){
     # Returns the serial number of the disk
     local DISK=$(media_device_name "$1")
     
-    lsblk "$DISK" -n -d -o vendor,model,serial | sed 's/  */ /g'
+    lsblk "$DISK" -n -d -o serial
 }
 
 

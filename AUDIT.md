@@ -46,15 +46,15 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 35 | `media_device_size` | 988 | PASS | lsblk -b -n -d -o size clean; empty input fails safely |
 | 36 | `media_device_type` | 997 | PASS | 0.5s retry on empty = udev-race handling; empty-output contract consistent |
 | 37 | `media_device_name` | 1012 | FIX | grep-10 branch stripped ALL digits (mmcblk0p10→/dev/mmcblkp, nvme0n1p10→mangled) → anchored `s/[1-9][0-9]*$//` (+p variant); 11-case matrix now exact, embedded zeros preserved; lint -2 (SC2001/SC2143, ref→final17) |
-| 38 | `media_disk_friendlyname` | 1044 | — | |
-| 39 | `media_disk_pt_type` | 1054 | — | |
+| 38 | `media_disk_friendlyname` | 1044 | PASS | composes two audited helpers |
+| 39 | `media_disk_pt_type` | 1054 | PASS | parted -m f6 = PTTYPE ✓ |
 | 40 | `media_device_checktarget` | 1070 | PASS | initDisk pass (live part guard / dead disk guard analyzed) |
-| 41 | `media_disk_model` | 1127 | — | |
-| 42 | `media_disk_serial` | 1143 | — | |
-| 43 | `media_disk_sectorsize` | 1151 | — | |
-| 44 | `media_disk_blocksize` | 1158 | — | |
-| 45 | `media_disk_listdisks` | 1167 | — | |
-| 46 | `media_disk_align` | 1190 | — | |
+| 41 | `media_disk_model` | 1127 | PASS | lsblk + parted-Model fallback |
+| 42 | `media_disk_serial` | 1143 | FIX | was emitting vendor+model+serial line → `-o serial` only (both call sites are display lines; verified: mmcblk0/sda1 now return bare serial) |
+| 43 | `media_disk_sectorsize` | 1151 | PASS | DEAD (no callers); `blockdev --getss` correct — left per policy |
+| 44 | `media_disk_blocksize` | 1158 | PASS | `--getbsz` bytes as all 6 consumers expect (comment "4095" = cosmetic typo for 4096) |
+| 45 | `media_disk_listdisks` | 1167 | PASS | TYPE=disk filter correct |
+| 46 | `media_disk_align` | 1190 | PASS | `$(is_number …) = true` string idiom correct; 100% passthrough + clamp by design; roundup idiom correct |
 | 47 | `media_disk_first_available_byte` | 1227 | — | |
 | 48 | `media_filesystem_ismounted` | 1281 | — | |
 | 49 | `media_filesystem_mountpoint` | 1304 | — | |
@@ -133,3 +133,4 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 2026-9 | #25 ui_countdown | FIX | `local SECONDS`→`CNT` (special-var rebase hazard) |
 | 2026-9 | #34 media_device_partnum | FIX | dead is_number guard → rc-based `is_number … >/dev/null` |
 | 2026-9 | #37 media_device_name | FIX | 10+ partition mangle (mmcblk0p10) → anchored trailing-digit strip |
+| 2026-9 | #42 media_disk_serial | FIX | `-o vendor,model,serial` → `-o serial` (bare serial) |
