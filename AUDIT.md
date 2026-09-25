@@ -77,9 +77,9 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 64 | `media_disk_repair` | 1978 | PASS | delegates to verify; `$YESNO` passed as arg re-parses harmlessly via getargs ("no changes made" matches its comment) |
 | 65 | `media_disk_initialize` | 1996 | PASS | initDisk review (410db81) |
 | 66 | `media_disk_addpartition` | 2068 | FIX | fat16 `max` cap never applied (`END=100%` parsed as `100 % -BEG`→100, always < 4G) → `max` capped at BEG+4090M, numeric path is_number-guarded; dead `(( $VERBOSE ))` @2221/2262 (always false — `(( -v ))`=0) → `[[ $VERBOSE = -v ]]`. notes: 2120 BLOCK_SIZE lookup dead (1MiB GPT hardcode, intentional); `$NAME` arg unused (mkpart name=`$PART_TYPE`); 2123-26 LAST_PARTITION/PART_NUM/PARTITION vestigial (num re-derived from `parted -m print` ✓); `grep "$BEG"` could match end==new start (edge); 2258 + consumer 4455 DISK+num naming (4455 queued) |
-| 67 | `media_disk_delpartition` | 2261 | — | |
-| 68 | `media_disk_mount` | 2314 | — | |
-| 69 | `media_disk_unmount` | 2348 | — | |
+| 67 | `media_disk_delpartition` | 2274 | FIX | 2285 `PARTITION=$DEVICE$PARTNUM` built `mmcblk02`/`nvme0n11` (invalid) → checktarget@2296 rejected → delPartition failed on ALL SD/NVMe disks; now mmcblk/nvme-safe name (parted `rm` keeps bare number ✓). 2321 `$PART_NO` undef → `$PARTNUM` (SC2153 −1). note: final `parted rm` has no explicit rc check (implicit) |
+| 68 | `media_disk_mount` | 2327 | FIX | 2356 `"$DISK""$PART"` → `mmcblk02` in live mount loop → `p$PART` prefix; count=0 → whole-disk-volume branch correct ✓ |
+| 69 | `media_disk_unmount` | 2361 | FIX | 2377 `exit 1` → `return 1` (killed session; siblings use return). live path sound (df-list + multi-device umount). notes: 2390-2401 DEAD block (after `return`, has invalid `umount -q`) — left per dead-code rule; unanchored `grep "$DISK"` safe (disk name = partition prefix) |
 | 70 | `media_disk_eject` | 2391 | — | |
 | 71 | `media_disk_format` | 2417 | — | |
 | 72 | `media_device_wipe` | 2555 | — | FLAGGED (from #9 call-site walk): line 2628 `[[ $DISK = $env_root_device ]]` references a VARIABLE (empty) → root-disk guard is dead; `wipe mmcblk0 disk` would pass the guard. Fix belongs to this item: `$(media_device_name "$(env_root_device)")` |
@@ -142,3 +142,4 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 2026-9 | #58/#59/#60 whole-disk branches | FIX | start was disk-size → `1`; end/size were `1` → disk size; #61 0-partition path now returns disk end. lint −1 (SC2005), ref→final19 |
 | 2026-9 | #61b/#63 test+verify loops | FIX | 1970 yesno gate un-inverted (YES=verify); mmcblk/nvme `p`-partition names in 1881/1972; #61b PARTCOUNT before prompt + "partitions" typo |
 | 2026-9 | #66 addpartition | FIX | fat16+max now capped at BEG+4090M (was unbounded → oversized fat16); 2221/2262 verbose prints were dead (`(( $VERBOSE ))` always false) → `[[ $VERBOSE = -v ]]`; SC2004 −1, ref→final20 |
+| 2026-9 | #67/#68 delpart+mount names | FIX | mmcblk/nvme p-names: delpartition 2285 (was failing checktarget on SD/NVMe disks) + mount loop 2356; #67 `$PART_NO`→`$PARTNUM`; #69 `exit`→`return`. SC2153 −1, ref→final21 |

@@ -2283,6 +2283,7 @@ media_disk_delpartition(){
     local DEVICE=$(media_device_name "$1")
     local PARTNUM=$(media_device_partnum "$1")
     local PARTITION=$DEVICE$PARTNUM
+    [[ $DEVICE == *mmcblk* || $DEVICE == *nvme* ]] && PARTITION=$DEVICE"p$PARTNUM"
 
     local YESNO
     local VERBOSE
@@ -2318,7 +2319,7 @@ media_disk_delpartition(){
     fi
 
     
-    echo "Deleting partition $PART_NO on '$DEVICE '..."
+    echo "Deleting partition $PARTNUM on '$DEVICE '..."
         #   run_command "sudo dd if=/dev/zero of=$DEVICE bs=512 count=4" $LINENO
     run_command "sudo parted $DEVICE rm $PARTNUM" $LINENO "$VERBOSE"
 }
@@ -2353,6 +2354,7 @@ media_disk_mount(){
     local PARTITIONS=$(media_disk_partition_list "$DISK")
     
     for PART in $PARTITIONS; do
+            [[ $DISK == *mmcblk* || $DISK == *nvme* ]] && PART="p$PART"
             media_volume_mount "$DISK""$PART" -y "$VERBOSE"
     done
 }        
@@ -2374,7 +2376,7 @@ media_disk_unmount(){
     getargs $*    
     
     media_device_checktarget "$DISK" disk
-    if (( $? )); then exit 1; fi
+    if (( $? )); then return 1; fi
     
     (( $(ui_yesno "UNMOUNT" "unmount all volumes on $DISK" "$YESNO") )) || return
     
