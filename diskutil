@@ -3358,7 +3358,7 @@ media_filesystem_check() {
             
  
         "") #error $LINENO "No filesystem found.. continuing."
-            if  (( $(ui_yesno "CHECK FILESYSTEM" "No filesystem found. Continue?" ) )); then
+            if  (( $(ui_yesno "CHECK FILESYSTEM" "No filesystem found. Continue?" "$YESNO") )); then
                 return
             else
                 #echo_red quiting
@@ -3413,11 +3413,16 @@ media_filesystem_check() {
          #   sleep 1
             #run_command "sudo btrfs check $PARTITION " $LINENO $VERBOSE 
             run_command "sudo btrfsck '$PARTITION' " $LINENO "$VERBOSE"    # from gparted
-            (( $? )) && (( ! $(ui_yesno "VERIFY" "Errors found.  Try to fix" "$YESNO") )) || return 1
-
-            echo_white  "Attempting to repair filesystem..."
-            media_filesystem_repair "$PARTITION" "$FS_TYPE" -y "$VERBOSE"
-            if (( $? )) ; then return 1; fi
+            if (( $? )); then
+                ui_msg_error $LINENO "btrfsck found errors on '$PARTITION'"
+                if (( ! $(ui_yesno "VERIFY" "Errors found.  Try to fix" "$YESNO") )); then
+                    echo
+                    return 1
+                fi
+                echo_white  "Attempting to repair filesystem..."
+                media_filesystem_repair "$PARTITION" "$FS_TYPE" -y "$VERBOSE"
+                if (( $? )) ; then return 1; fi
+            fi
  
           #  echo_blue "sudo btrfs check $PARTITION"
           #  sudo btrfs check $PARTITION
