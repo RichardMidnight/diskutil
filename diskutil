@@ -2949,6 +2949,11 @@ media_partition_reformat(){
     FS=$(media_partition_fs_type "$PARTITION")
     NAME=$(media_filesystem_name "$PARTITION")
     
+    if [[ -z $FS ]]; then
+        ui_msg_error $LINENO "No filesystem on $PARTITION (use format instead)"
+        return 1
+    fi
+
     if [[ "$FILESYSTEMS" != *"$FS"* ]]; then
         echo "$FS" is not a supported filesystem
         return 1
