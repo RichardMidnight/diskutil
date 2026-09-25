@@ -107,7 +107,7 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 92 | `getargs` | 4671 | PASS | YESNO/-y/TTY semantics verified |
 | 93 | `media_volume_verify` | 4749 | PASS | 3-step verify (disk_verify rc ✓, part -e check ✓, filesystem_check rc ✓ — #80-fixed fn); names come from user arg (no disk+num concat); yesno/rc chain clean. notes: commented-out PT-type/partcount blocks (dead, left) |
 | 94 | `media_volume_repair` | 4826 | PASS | thin wrapper: usage ✓, checktarget part ✓, delegates to #81-fixed media_filesystem_repair with rc ✓. notes: `media_device_fullname` called before usage guard (quiet debug echo only, harmless); FS_TYPE auto-detected in callee ✓ |
-| 95 | `media_clone` | 4813 | — | |
+| 95 | `media_clone` | 4866 | FIX | live but fully broken: dd/pv lines COMMENTED OUT; `media_size`/`BS`/`INDEV` undefined; TARGET unused → `diskutil clone SRC DST` printed garbage sizes + "command not found" noise and **exited 0 without copying anything**. Replaced body with honest refusal: usage guard, explicit "not implemented yet - nothing was copied" + `sudo dd if= of= bs=4M conv=fsync` hint, `do_beep_down`, return 1. stub-tested (no-args / with-args → rc1 + text). LINT improved (−8 SC2004, −3 SC2034, SC2319/2320 down) |
 | 96 | `whiptail_calc_wt_size` | 4870 | — | |
 | 97 | `menu` | 4899 | — | FLAGGED: "Change settings" (4928) calls `menu_settings` which is NOT defined |
 | 98 | `diskutil_install` | 4947 | — | |
@@ -161,3 +161,4 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 2026-9 | #90 volume_add | FIX | 5th live raw-name concat site: addVolume built `/dev/mmcblk01`/`nvme0n11` → format never ran (partition created unformatted) → p-name idiom (sda/mmcblk/nvme verified); other concat sites 1240/2124 are unused locals (left); LINT flat vs final23 |
 | 2026-9 | #93 volume_verify | PASS | 3-step (disk rc ✓, part -e ✓, fs_check rc ✓ = #80-fixed); names from user arg (no concat) |
 | 2026-9 | #94 volume_repair | PASS | thin wrapper → #81-fixed media_filesystem_repair with rc ✓ |
+| 2026-9 | #95 media_clone | FIX | body was fully broken (dd/pv commented out; media_size/BS/INDEV undefined; TARGET unused) → printed garbage and exited 0 without copying anything → replaced with honest refusal + dd hint, return 1; stub-tested; LINT deltas all decreases |

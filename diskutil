@@ -4864,59 +4864,24 @@ echo_debug $LINENO
 #######################################################################
 
 media_clone(){
-    SOURCE=$1
-    TARGET=$2
-    
+    # CLONE is not implemented yet.
+    # The previous dd/pv copy loop is still commented out and its helpers
+    # (media_size, BS, INDEV) are undefined, so the command would print
+    # nonsense sizes and exit 0 WITHOUT copying anything. Refuse instead.
 
-    # get info
- #   if [[ $SKIP_FREESPACE = "on" ]]; then
+    SOURCE=${1:-}
+    TARGET=${2:-}
 
-		START_OF_FREESPACE=$(sudo parted -ms "$SOURCE" unit B print free)
-		RC=$?
-		if (( $RC )); then
-			ui_msg_error $LINENO "parted failed with Exit-code $RC"
-            do_beep_down
-			return 15
-		fi
-		START_OF_FREESPACE=$(tail -1 <<< "$START_OF_FREESPACE" | grep free | cut -d ':' -f 2 | tr -d 'B')
-		if ! (( $START_OF_FREESPACE )); then 
-			START_OF_FREESPACE=$(media_size "$SOURCE")
-		fi
-
-		BYTES_TO_READ=$START_OF_FREESPACE
-		BLOCKS_TO_READ=$(( $BYTES_TO_READ / $BS + 1 ))
-
-		echo Media size="$(media_size "$SOURCE" -h)"
-		echo Skipping "$(bytes $(( $(media_size "$INDEV") - $START_OF_FREESPACE )) -h )" of freespace at end.
-		echo Reading="$(bytes "$START_OF_FREESPACE" -h)"
-
-#	else
-	  BYTES_TO_READ=$(media_size "$INDEV")
-	  BLOCKS_TO_READ=$(( $BYTES_TO_READ / $BS + 1))
-
-#	fi    
-	#end of new section    
-    
-    # check if there is space
-    SOURCE_SIZE=$(sudo lsblk -ndb "$SOURCE" -o size)
-    TARGET_SIE=$()    
-        
-    # ask to procede
-    
-    #do it
-    #sudo dd bs=4M if=$INDEV of="$OUTFILE_BASE".img status=progress conv=fsync 
-    if [[ -n $(which pv) ]]; then
-#		sudo pv $SOURCE -s $BYTES_TO_READ | dd bs=$BS of=$TARGET count="$BLOCKS_TO_READ" iflag=fullblock conv=fsync 
-		RC=$?
-    else
-      echo "Note: 'pv' is not installed so there is no progress indicator for this step. Please wait..."
-#      sudo dd bs=4M if=$INDEV of="$OUTFILE_BASE".img  conv=fsync 
-      RC=$?
+    if [[ -z $SOURCE || -z $TARGET ]]; then
+        echo "Usage: diskutil clone SOURCE TARGET"
+        echo "  Example: diskutil clone usb1 sdb"
+        return 1
     fi
-    if (( $RC )); then
-        do_beep_down
-        return $RC
-    fi
+
+    ui_msg_error "$LINENO" "CLONE is not implemented yet - nothing was copied."
+    echo "Manual equivalent:  sudo dd if=${SOURCE} of=${TARGET} bs=4M conv=fsync"
+    do_beep_down
+    return 1
 }
 
 
