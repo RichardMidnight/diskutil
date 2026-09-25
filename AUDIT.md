@@ -84,8 +84,8 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 71 | `media_disk_format` | 2432 | FIX | 2509 `PARTITION=$DEVICE$PART_NUM` → `/dev/mmcblk01` invalid → Step 3 format + mount failed on SD/NVMe → mmcblk/nvme-safe name (`/dev/`-prefixed form); Step 3 had NO rc check (failed format still said "Step3: DONE" + mounted) → `\|\| return 1`. notes: ROOT 2459 + TYPE 2460 dead (root refusal via nested initDisk ✓); SIZE double-declared (2447/2483); flow unmount→init→add(max)→format→mount ✓ |
 | 71b | `media_device_info` | 2526 | PASS | queue gap (3rd: #10b/#49b/#61b → this). checktarget no-type (either ok) ✓; part branch → filesystem_info + partition_os ✓. note: 2529 fullname evaluated BEFORE the `-z $1` guard (2533) — harmless (fullname has own empty-check); live from `info*` @5168 |
 | 72 | `media_device_wipe` | 2571 | FIX | FLAG (from #9) confirmed: 2635 `[[ $DISK = $env_root_device ]]` read an UNSET VARIABLE (`env_root_device` is the function) → root-disk guard DEAD (would wipe the boot disk) → `$(env_root_disk)`, same idiom as 2037/2164. SC2154 −1, SC2053 −1 |
-| 73 | `retire_maybe_media_partition_pt_type` | 2683 | — | |
-| 74 | `media_partition_fs_type` | 2694 | — | read (parted→lsblk fallback); formal PASS |
+| 73 | `retire_maybe_media_partition_pt_type` | 2699 | PASS–DEAD | would work if called (`-m` disk-header line; **f6 = PTTYPE verified empirically** `f6=msdos`; `grep "$DISK"` matches only the disk line — partition lines start with digits) but ZERO live callers (def only; name already says retire) |
+| 74 | `media_partition_fs_type` | 2710 | PASS | parted f5=FS ✓ (`^$PARTNUM:` anchor safe at 10+; verified on image) → lsblk×3 fallback; `echo_debug`→stderr (capture-safe); rc 1 if empty ✓; 15 live callers. note: triple identical lsblk retry redundant (harmless) |
 | 75 | `media_partition_format` | 2758 | — | |
 | 76 | `media_partition_reformat` | 2908 | — | |
 | 77 | `media_partition_resize` | 2941 | PASS | resize pass (ac8f5e1) |
