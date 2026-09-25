@@ -223,7 +223,7 @@ env_install_tools() {
         case $TOOL in
 
         udisksctl)
-            sudo "$INSTALL" udisks2 -y
+            sudo "$INSTALL" udisks2
             ;;
 
         udisks2)

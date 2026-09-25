@@ -19,7 +19,7 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 9 | `env_root_device` | 162 | PASS | audited in initDisk pass (410db81) |
 | 10 | `env_root_disk` | 168 | PASS | audited in initDisk pass (410db81) |
 | 10b | `env_which` | 183 | FIX | triple-sequential apt/pacman/dnf install (no detection; broken on zypper/xbps, double-fail noise on Debian) → single per-distro install via audited `env_installer`; stdout kept quiet |
-| 11 | `env_install_tools` | 203 | — | walk done: `udisks2)` case branch is DEAD (REQUIRED_TOOLS has only udisksctl); reachable `udisksctl)` branch appends stray `-y` after package name → breaks pacman (`pacman -S --noconfirm udisks2 -y`); named branches lack the rc check the `*` branch has |
+| 11 | `env_install_tools` | 203 | FIX | removed stray trailing `-y` after package name in `udisksctl`) branch (broke pacman; flag already in installer string) |
 | 12 | `env_list_filesystems` | 236 | — | partially seen (FS pass) |
 | 13 | `env_install_smarttools` | 265 | — | |
 | 14 | `media_filesystem_install` | 282 | PASS | FS support pass (6155a6e c631283) |
@@ -122,3 +122,4 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 2026-9 | #7 env_removal | FIX: same empty-result guard (b9590ac) |
 | 2026-9 | #8 env_package_in_use | FIX: apt chain-detection awk (indent + flowed lines), tokenized self-exclusion |
 | 2026-9 | #10b env_which | FIX: per-distro `which` install via env_installer (was unconditional apt+pacman+dnf) |
+| 2026-9 | #11 env_install_tools | FIX: stray trailing `-y` after package (pacman-breaking) removed |
