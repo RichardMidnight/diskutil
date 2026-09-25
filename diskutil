@@ -3890,6 +3890,11 @@ media_filesystem_resize(){
             
             echo_white "Resizing $PARTITION to $NEW_SIZE"
             run_command "sudo e2fsck -f -y $PARTITION" $LINENO "$VERBOSE"
+            EC=$?
+            if (( EC > 1 )); then   # rc 1 = errors corrected (safe to proceed)
+                ui_msg_error $LINENO "e2fsck failed with rc $EC"
+                return 1
+            fi
             run_command "sudo resize2fs -p $PARTITION $NEW_SIZE" $LINENO "$VERBOSE"   #from gparted
             if (( $? )); then return 1; fi
             ;;       
@@ -3910,6 +3915,10 @@ media_filesystem_resize(){
             media_volume_mount "$PARTITION" -y
             local MOUNT_POINT=$(df "$PARTITION" --output=target | grep ^/)
             run_command "sudo xfs_growfs -d $NEW_SIZE '$MOUNT_POINT' "  $LINENO "$VERBOSE"     # grow to max size
+            if (( $? )); then
+                media_volume_unmount "$PARTITION" -y
+                return 1
+            fi
             sleep .5
             media_volume_unmount "$PARTITION" -y
             if (( $? )); then return 1; fi
@@ -3927,6 +3936,10 @@ media_filesystem_resize(){
       #      sleep .5
             local MOUNT_POINT=$(df "$PARTITION" --output=target | grep ^/)
             run_command "sudo btrfs filesystem resize 1:$NEW_SIZE '$MOUNT_POINT'" $LINENO "$VERBOSE" # from gparted
+            if (( $? )); then
+                media_volume_unmount "$PARTITION" -y
+                return 1
+            fi
             sleep .5
             media_volume_unmount "$PARTITION" -y
             if (( $? )); then return 1; fi
@@ -3934,16 +3947,33 @@ media_filesystem_resize(){
         
         
         f2fs)
-            # only grow-to-max is safe here.  Shrink with: resize.f2fs
-            if [[ $SIZE = max ]]; then
+            # resize.f2fs (f2fs-tools >= 1.12) resizes OFFLINE against the device;
+            # no -t = size to the whole device (max).  Older trees only ship grow.f2fs (grow-only): legacy fallback.
+            local F2FS_BYTES
+            case $SIZE in
+                max) F2FS_BYTES= ;;
+                min) F2FS_BYTES=$(media_filesystem_min "$PARTITION" "$FS_TYPE") ;;
+                *)   F2FS_BYTES=$(bytes "$SIZE" -b) ;;
+            esac
+            if [[ -n $F2FS_BYTES ]] && ! [[ $F2FS_BYTES =~ ^[0-9]+$ ]]; then
+                ui_msg_error $LINENO "cannot determine numeric target size for f2fs resize (size probe failed?)"
+                return 1
+            fi
+            if command -v resize.f2fs > /dev/null 2>&1; then
+                local F2FS_ARGS=
+                [[ -n $F2FS_BYTES ]] && F2FS_ARGS="-s -t $(( F2FS_BYTES / $(media_disk_blocksize "$DISK") ))"
+                run_command "sudo resize.f2fs $F2FS_ARGS '$PARTITION'" $LINENO "$VERBOSE"
+                if (( $? )); then return 1; fi
+            elif [[ $SIZE = max ]] && command -v grow.f2fs > /dev/null 2>&1; then
+                # legacy grow-only toolchain
                 media_volume_mount "$PARTITION" -y
                 local MOUNT_POINT=$(df "$PARTITION" --output=target | grep ^/)
                 run_command "sudo grow.f2fs '$MOUNT_POINT'" $LINENO "$VERBOSE"
-                sleep .5
+                if (( $? )); then media_volume_unmount "$PARTITION" -y; return 1; fi
                 media_volume_unmount "$PARTITION" -y
                 if (( $? )); then return 1; fi
             else
-                ui_msg_error $LINENO "Only 'max' resize is supported for f2fs here. Shrink with: resize.f2fs"
+                ui_msg_error $LINENO "Cannot resize f2fs here - need resize.f2fs (install f2fs-tools)"
                 return 1
             fi
             ;;
@@ -3952,10 +3982,10 @@ media_filesystem_resize(){
             # resize_reiserfs with no -s sizes the fs to fill the partition (grow to max).
             # (with -s <size> it can set an absolute size, even shrink, e.g. 'resize_reiserfs -s -1G'; we only offer max here)
             if [[ $SIZE = max ]]; then
-                run_command "sudo resize_reiserfs '$PARTITION'" $LINENO "$VERBOSE"
+                run_command "sudo resize.reiserfs '$PARTITION'" $LINENO "$VERBOSE"
                 if (( $? )); then return 1; fi
             else
-                ui_msg_error $LINENO "Only 'max' is supported for reiserfs here. To shrink manually: resize_reiserfs -s <size>"
+                ui_msg_error $LINENO "Only 'max' is supported for reiserfs here. To shrink manually: resize.reiserfs -s <size>"
                 return 1
             fi
             ;;
@@ -3965,62 +3995,9 @@ media_filesystem_resize(){
             return 1
             ;;
 
-        btrfsxxx)
-            # mount to temp Mountpoint
-            local PARTSTART
-            local LOOPBACK
-            local MOUNTDIR
-            local WAS_MOUNTED=$(media_filesystem_ismounted "$PARTITION")
-            
-            case $SIZE in
-                 min)    NEW_SIZE="$(( $(media_filesystem_min "$PARTITION") / 1024 ))K"  ;;
-                 max)    NEW_SIZE="max"  ;;
-                 *)      NEW_SIZE="$(( $(bytes "$SIZE" -b) / 1024 ))K"  ;;
-             esac
-
-echo_debug "$LINEON" wasmounted="$WAS_MOUNTED"
-            if ! (( $WAS_MOUNTED )); then
-                # mount the filesystem
-      echo_debug "$LINEON" mounting...
-                PARTED_OUTPUT=$(sudo parted -ms "$DISK" unit B print)
-                if (( $? )); then return 1; fi	
-
-                PARTSTART="$(echo "$PARTED_OUTPUT" | grep ^"$PARTNUM": | cut -d ':' -f 2 | tr -d 'B')"
-                LOOPBACK="$(sudo losetup -f --show -o "$PARTSTART" "$DISK")"
-                if (( $? )); then
-                    echo ...retrying...
-                    sleep .5
-                    LOOPBACK="$(sudo losetup -f --show -o "$PARTSTART" "$DISK")"
-                    if (( $? )); then return 3; fi  
-                fi
-                MOUNTDIR=$(mktemp -d)
-                sudo mount "$LOOPBACK" "$MOUNTDIR"
-                if (( $? )); then
-                    sudo losetup -d "$LOOPBACK"
-                    return 4
-                fi
-            else
-                MOUNTDIR=$(media_filesystem_mountpoint "$PARTITION")
-            fi    
-echo_debug $LINENO DIR="$MOUNTDIR" "$(df "$PARTITION")"
-            
-            run_command "sudo btrfs filesystem resize 1:$NEW_SIZE $MOUNTDIR" $LINENO "$VERBOSE" # from gparted
-            if (( $? )); then 
-                sudo umount "$LOOPBACK"
-                sudo losetup -d "$LOOPBACK"
-                return 1
-            fi
-            
-            
-             if (( $WAS_MOUNTED )); then
-                sudo umount "$LOOPBACK"
-                sudo losetup -d "$LOOPBACK"
-            fi
-            
-            ;;
-            
        *)
             ui_msg_error $LINENO "Unknown filesystem type '$FS_TYPE'"
+            return 1
             ;;
             
     esac
