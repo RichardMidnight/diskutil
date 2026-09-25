@@ -2879,6 +2879,7 @@ media_partition_format(){
             
         xfs)
 			run_command "sudo mkfs.xfs -f -L '$FS_NAME' $PARTITION" $LINENO "$VERBOSE"  # -v=volumename
+			ES=$?
 			;;
 			
         zfs)
@@ -2888,22 +2889,27 @@ media_partition_format(){
             
         btrfs)
             run_command "sudo mkfs.btrfs -L '$FS_NAME' $PARTITION" $LINENO "$VERBOSE"
+            ES=$?
             ;;
             
         f2fs)
             run_command "sudo mkfs.f2fs $PARTITION" $LINENO "$VERBOSE"
+            ES=$?
             ;;
 
         jfs)
             run_command "sudo mkfs.jfs $PARTITION" $LINENO "$VERBOSE"
+            ES=$?
             ;;
 
         reiserfs)
             run_command "sudo mkfs.reiserfs -l '$FS_NAME' $PARTITION" $LINENO "$VERBOSE"
+            ES=$?
             ;;
 
         udf)
             run_command "sudo mkfsudf $PARTITION" $LINENO "$VERBOSE"
+            ES=$?
             ;;
 
         *)

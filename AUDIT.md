@@ -86,7 +86,8 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 72 | `media_device_wipe` | 2571 | FIX | FLAG (from #9) confirmed: 2635 `[[ $DISK = $env_root_device ]]` read an UNSET VARIABLE (`env_root_device` is the function) → root-disk guard DEAD (would wipe the boot disk) → `$(env_root_disk)`, same idiom as 2037/2164. SC2154 −1, SC2053 −1 |
 | 73 | `retire_maybe_media_partition_pt_type` | 2699 | PASS–DEAD | would work if called (`-m` disk-header line; **f6 = PTTYPE verified empirically** `f6=msdos`; `grep "$DISK"` matches only the disk line — partition lines start with digits) but ZERO live callers (def only; name already says retire) |
 | 74 | `media_partition_fs_type` | 2710 | PASS | parted f5=FS ✓ (`^$PARTNUM:` anchor safe at 10+; verified on image) → lsblk×3 fallback; `echo_debug`→stderr (capture-safe); rc 1 if empty ✓; 15 live callers. note: triple identical lsblk retry redundant (harmless) |
-| 75 | `media_partition_format` | 2758 | — | |
+| 74b | `media_partition_rename` | 2757 | PASS–DEAD | queue gap (4th: #10b/#49b/#61b/#71b). ZERO callers (def only); body correct (yesno action-body ✓, `parted $PARTITION name` valid with full name) |
+| 75 | `media_partition_format` | 2774 | FIX | rc contract broken in 6 branches (xfs/btrfs/f2fs/jfs/reiserfs/udf): `ES=$?` MISSING → gate `if (( $ES ))` (2919) read UNSET or STALE global ES → always "Formatted"+rc0 even when mkfs FAILS, and stale-ES could invert success→"failed" → added `ES=$?` to all 6 (matches the other 8 branches). This is the fn the #71 Step-3 `|| return 1` depends on. notes: 2813-2815 suggested model-name only PRINTED (label still `NEW`); exfat `-n ${FS_NAME^^}` unquoted (pre-existing); `unformatted)`/`*)` don't set ES (edge, pre-existing) |
 | 76 | `media_partition_reformat` | 2908 | — | |
 | 77 | `media_partition_resize` | 2941 | PASS | resize pass (ac8f5e1) |
 | 78 | `media_partition_alignment` | 3070 | — | |
@@ -145,3 +146,4 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 2026-9 | #66 addpartition | FIX | fat16+max now capped at BEG+4090M (was unbounded → oversized fat16); 2221/2262 verbose prints were dead (`(( $VERBOSE ))` always false) → `[[ $VERBOSE = -v ]]`; SC2004 −1, ref→final20 |
 | 2026-9 | #67/#68 delpart+mount names | FIX | mmcblk/nvme p-names: delpartition 2285 (was failing checktarget on SD/NVMe disks) + mount loop 2356; #67 `$PART_NO`→`$PARTNUM`; #69 `exit`→`return`. SC2153 −1, ref→final21 |
 | 2026-9 | #71/#72 erase+format | FIX | eraseDisk p-name on mmcblk/nvme (/dev/ form); Step 3 rc check (`\|\| return 1`, added 0 lint); wipe root-disk guard was DEAD (unset var vs function) → `$(env_root_disk)`. SC2154 −1, SC2053 −1, ref→final22 |
+| 2026-9 | #75 partition_format | FIX | 6 branches (xfs/btrfs/f2fs/jfs/reiserfs/udf) never captured `ES=$?` → always reported mkfs success (and stale global ES could invert a success into "failed"); now all 12 branches set ES before the gate |
