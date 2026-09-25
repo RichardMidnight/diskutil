@@ -59,10 +59,10 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 48 | `media_filesystem_ismounted` | 1281 | FIX | contract `1`/empty works for 16/18 sites; **2 dead `= true` safety guards fixed with it**: 3524 (repair-on-mounted-fs guard, #81) + 4614 (resize dispatch mounted guard, #95+). root-branch rc quirk harmless (no caller reads rc) |
 | 49 | `media_filesystem_mountpoint` | 1304 | PASS | mount/detect/unmount cycle correct; `WAS_MOUNTED` arithmetic clean |
 | 49b | `media_filesystem_record` | 1323 | PASS | (queue-gap, like #10b). Global `$PARTITION` set by its single caller (4300) — works, sloppy idiom; mount/detect/unmount cycle correct; `local FS_RECORD=$(lsblk …)` baseline SC2155 |
-| 50 | `media_filesystem_min` | 1333 | — | mostly read (fat/exfat/ntfs); reconfirm rest |
-| 51 | `media_filesystem_name` | 1447 | — | |
-| 52 | `media_filesystem_size_alt` | 1474 | — | |
-| 53 | `media_filesystem_size` | 1496 | — | mostly read (resize pass); reconfirm edges |
+| 50 | `media_filesystem_min` | 1333 | PASS | per-fs min logic correct (fat floor, ext2fs -P, ntfsresize/ntfs, btrfs min-dev-size, no-shrink=size). Notes: `1025*1024*10` padding (10,240B over "10M", left), fat-guard `exit` aggressive, 1399 is_number tests always-true (degrades safely) |
+| 51 | `media_filesystem_name` | 1454 | PASS | label via lsblk with 2×0.5s retries; empty = no label (callers at 2935/3685/3716 handle) |
+| 52 | `media_filesystem_size_alt` | 1481 | PASS | mount→lsblk fssize→restore state; re-mount in the already-mounted branch is a benign no-op (end state correct) |
+| 53 | `media_filesystem_size` | 1496 | FIX | xfs mount-restore was INVERTED (unmounted user's mounted vol, left unmounted vols mounted; 9 call sites) → `[[ -z $WAS_MOUNTED ]]`. Also `$currentsize`→`$blockcount` (ext guard typo, inert). lint -2 (SC2004/SC2154, ref→final18) |
 | 54 | `media_filesystem_used` | 1605 | — | |
 | 55 | `media_disk_partition_list` | 1628 | — | |
 | 56 | `media_disk_partcount` | 1649 | — | |
@@ -137,3 +137,4 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 2026-9 | #42 media_disk_serial | FIX | `-o vendor,model,serial` → `-o serial` (bare serial) |
 | 2026-9 | #47 media_disk_first_available_byte | FIX | spurious fresh-disk `religned` debug line → `-n` guard |
 | 2026-9 | #48 ismounted call-sites | FIX | two dead `= true` mount-guards (3524 repair / 4614 resize) → `-n $(…)` |
+| 2026-9 | #53 media_filesystem_size | FIX | xfs restore inverted → `[[ -z $WAS_MOUNTED ]]`; `$currentsize`→`$blockcount` |

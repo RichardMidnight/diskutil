@@ -1551,7 +1551,7 @@ media_filesystem_size(){
         ext2|ext3|ext4)       
             blockcount="$(sudo tune2fs -l "$PARTITION" | grep '^Block count:' | tr -d ' ' | cut -d ':' -f 2)"
             blocksize="$(sudo tune2fs -l "$PARTITION" | grep '^Block size:' | tr -d ' ' | cut -d ':' -f 2)"
-            if [[ $(is_number "$currentsize") ]] && [[ $(is_number "$blocksize") ]]; then
+            if [[ $(is_number "$blockcount") ]] && [[ $(is_number "$blocksize") ]]; then
                 FS_SIZE=$(($blockcount * $blocksize))
             fi
             ;;
@@ -1580,7 +1580,7 @@ media_filesystem_size(){
             
             #FS_SIZE=$(lsblk -b -n $PARTITION -o fssize)
          
-              if (( $WAS_MOUNTED )); then
+              if [[ -z $WAS_MOUNTED ]]; then
               #sleep .5
                 MNT=$(media_volume_unmount "$PARTITION" -y -f)
                 #udisksctl unmount -f -b $PARTITION > /dev/null
