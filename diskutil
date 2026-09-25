@@ -4496,6 +4496,7 @@ media_volume_add(){
 # echo_debug $LINENO    
 
     local PARTITION=$DEVICE$NEW_PARTITION_NUM
+    [[ $DEVICE == *mmcblk* || $DEVICE == *nvme* ]] && PARTITION=$DEVICE"p$NEW_PARTITION_NUM"
 
 
     # zero the begining of the partition ... not needed, done in partition_format
