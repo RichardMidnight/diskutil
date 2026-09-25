@@ -90,8 +90,8 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 75 | `media_partition_format` | 2774 | FIX | rc contract broken in 6 branches (xfs/btrfs/f2fs/jfs/reiserfs/udf): `ES=$?` MISSING → gate `if (( $ES ))` (2919) read UNSET or STALE global ES → always "Formatted"+rc0 even when mkfs FAILS, and stale-ES could invert success→"failed" → added `ES=$?` to all 6 (matches the other 8 branches). This is the fn the #71 Step-3 `|| return 1` depends on. notes: 2813-2815 suggested model-name only PRINTED (label still `NEW`); exfat `-n ${FS_NAME^^}` unquoted (pre-existing); `unformatted)`/`*)` don't set ES (edge, pre-existing) |
 | 76 | `media_partition_reformat` | 2930 | FIX | empty `FS` (unformatted) BYPASSED the `*"$FS"*` guard (empty string matches all) → format("") → `*)` "Unknown format ''" + fake success rc0 → explicit `-z $FS` rejection ("use format instead"). rest clean: checktarget ✓, rc = format rc (honest since #75) ✓, yesno passthrough harmless |
 | 77 | `media_partition_resize` | 2941 | PASS | resize pass (ac8f5e1) |
-| 78 | `media_partition_alignment` | 3070 | — | |
-| 79 | `media_partition_check` | 3098 | — | |
+| 78 | `media_partition_alignment` | 3097 | PASS | partnum empty→1 ✓; `align-check opt/min`+`grep not` ladder → optimal/minimal/none ✓. note: zero-partition disk forces partnum 1 → parted errors → no grep match → reports `optimal` (edge) |
+| 79 | `media_partition_check` | 3125 | FIX | 4th site of raw DISK+num concat: PREV/NEXT built `mmcblk02`/`nvme0n11` (invalid) → `! -e` fallback → **adjacent-overlap checks silently skipped on ALL SD/NVMe disks** → p-names (via PREVNUM/NEXTNUM vars, also cut 2 SC2004). verified: empty-RHS `[[ -lt ]]` non-fatal (check-skip, not crash). notes: 3177 `START -lt 0` dead (unsigned); 3198 msg copy-paste ("start" for END) + debug echoes only on error path; final `OK` unconditional by design |
 | 80 | `media_filesystem_check` | 3214 | — | |
 | 81 | `media_filesystem_repair` | 3479 | — | |
 | 82 | `media_filesystem_rename` | 3660 | — | |
@@ -148,3 +148,4 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 2026-9 | #71/#72 erase+format | FIX | eraseDisk p-name on mmcblk/nvme (/dev/ form); Step 3 rc check (`\|\| return 1`, added 0 lint); wipe root-disk guard was DEAD (unset var vs function) → `$(env_root_disk)`. SC2154 −1, SC2053 −1, ref→final22 |
 | 2026-9 | #75 partition_format | FIX | 6 branches (xfs/btrfs/f2fs/jfs/reiserfs/udf) never captured `ES=$?` → always reported mkfs success (and stale global ES could invert a success into "failed"); now all 12 branches set ES before the gate |
 | 2026-9 | #76 partition_reformat | FIX | empty-FS (unformatted) bypassed the `*"$FS"*` guard → fake "Unknown format ''" success → explicit `-z $FS` rejection |
+| 2026-9 | #79 partition_check | FIX | 4th raw DISK+num site: prev/next names invalid on mmcblk/nvme → adjacent-overlap checks silently skipped → p-names (PREVNUM/NEXTNUM, SC2004 −2, ref→final23) |

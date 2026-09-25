@@ -3164,11 +3164,15 @@ media_partition_check(){
     echo -n .
     
     
-    local PARTITION_PREV=$DEVICE$(( $PARTNUM - 1 ))
+    local PREVNUM=$(( PARTNUM - 1 ))
+    local PARTITION_PREV=$DEVICE$PREVNUM
+    [[ $DEVICE == *mmcblk* || $DEVICE == *nvme* ]] && PARTITION_PREV=$DEVICE"p$PREVNUM"
     if [[ ! -e $PARTITION_PREV ]]; then
         PARTITION_PREV=$DEVICE
     fi
-    local PARTITION_NEXT=$DEVICE$(( $PARTNUM + 1 ))
+    local NEXTNUM=$(( PARTNUM + 1 ))
+    local PARTITION_NEXT=$DEVICE$NEXTNUM
+    [[ $DEVICE == *mmcblk* || $DEVICE == *nvme* ]] && PARTITION_NEXT=$DEVICE"p$NEXTNUM"
     if [[ ! -e $PARTITION_NEXT ]]; then
         PARTITION_NEXT=$DEVICE
     fi
