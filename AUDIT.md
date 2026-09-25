@@ -31,9 +31,9 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 20 | `do_countdown` | 588 | FIX | added `local INPUT`; deleted dead `MSG=$(echo "$MSG.$i")` (undefined $i, unused). y/other/timeout rc 0/2/0 verified; lint -2 (SC2116, SC2154) |
 | 21 | `get_ver_to_int` | 614 | FIX | parts/val were global → local (leak proven+fixed); behavior verified 1.2.3→1002003, 1.2→1002000, abc→0 |
 | 22 | `is_number` | 624 | PASS | audited in earlier quoting/bugfix passes |
-| 23 | `info_validate_num` | 646 | — | |
-| 24 | `bytes` | 678 | PASS | read in resize pass (base/suffix logic) |
-| 25 | `ui_countdown` | 769 | — | |
+| 23 | `info_validate_num` | 646 | PASS | DEAD (no callers; only user of the ERRORS counter, which is otherwise unused). If ever enabled: MIN/MAX-violation paths log but don't return 1 (inconsistent with not-a-number path) — note for later |
+| 24 | `bytes` | 678 | FIX | TB→bytes multiplier was `*2014` (typo) → `*1024`: 1tb was 2162516033536 (1.9667×), now 1099511627776; kb/mb/gb untouched. (reconfirmed earlier PASS verdict — this line had been missed) |
+| 25 | `ui_countdown` | 769 | FIX | `local SECONDS` rebased shell $SECONDS (special var) → renamed local to CNT (no in-script consumer, but source-environment hazard). whiptail_countdown undefined = flagged, left (non-cli branch) |
 | 26 | `ui_echo` | 787 | — | |
 | 27 | `ui_log` | 808 | — | |
 | 28 | `ui_msg` | 825 | — | |
@@ -128,3 +128,6 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 2026-9 | #16 do_beep | FIX | FREQ/TIME made local |
 | 2026-9 | #20 do_countdown | FIX | `local INPUT`; deleted dead `MSG=$(echo "$MSG.$i")` |
 | 2026-9 | #21 get_ver_to_int | FIX | parts/val made local (were leaking global) |
+| 2026-9 | #23 info_validate_num | note | DEAD; if enabled, MIN/MAX path logs but lacks `return 1` |
+| 2026-9 | #24 bytes | FIX | TB→bytes `*2014`→`*1024` (1tb was 1.9667× too big) |
+| 2026-9 | #25 ui_countdown | FIX | `local SECONDS`→`CNT` (special-var rebase hazard) |

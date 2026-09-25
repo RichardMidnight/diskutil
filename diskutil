@@ -768,7 +768,7 @@ bytes(){
             k|K|kb|KB)      echo $(($BASE*1024))   ;;
             m|M|mb|MB)      echo $(($BASE*1024*1024))   ;;
             g|G|gb|GB)      echo $(($BASE*1024*1024*1024))      ;;
-            t|T|tb|TB)      echo $(($BASE*1024*1024*1024*2014))  ;;
+            t|T|tb|TB)      echo $(($BASE*1024*1024*1024*1024))  ;;
             *)              ui_msg_error $LINENO "unknown suffix '$SUFFIX'"   ;;
         esac
     fi
@@ -781,19 +781,19 @@ bytes(){
 ########################################################################
 
 ui_countdown(){
-    local SECONDS=${1:-10}
+    local CNT=${1:-10}
     local TITLE="${2:-Countdown}"
     #local MESSAGE="${3:-Counting down...}"
-    local MESSAGE=${3:-"Pausing for $SECONDS seconds... Press y to continue immediately or any other key to stop"}
+    local MESSAGE=${3:-"Pausing for $CNT seconds... Press y to continue immediately or any other key to stop"}
     
     if [[ $INTERFACE = cli ]]; then
-        do_countdown "$SECONDS" "$MESSAGE"
+        do_countdown "$CNT" "$MESSAGE"
         if (( $? )); then
             #ui_msg  "Countdown stopped."  "" "" "" log
             return 1
         fi
     else
-        whiptail_countdown "$SECONDS" "$TITLE" "$MESSAGE"
+        whiptail_countdown "$CNT" "$TITLE" "$MESSAGE"
     fi
 }
 
