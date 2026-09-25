@@ -3484,18 +3484,22 @@ media_filesystem_check() {
 #echo_debug "$LINENO FS_SIZE='$FS_SIZE'   "
     local PART_SIZE=$(media_partition_size "$PARTITION")
 #echo_debug $LINENO $PARTITION PART_SIZE=$PART_SIZE    
-    local BUFFER=$(( $PART_SIZE - $FS_SIZE ))
-    
-    
-    if [[ $BUFFER -lt 0 ]]; then
-        echo_debug $LINENO FS_SIZE="$FS_SIZE"  "$(bytes "$FS_SIZE" -h)"
-        echo_debug $LINENO PART_SIZE="$PART_SIZE"  "$(bytes "$PART_SIZE" -h)"
-        ui_msg "WARNING" "line $LINENO: Filesystem is $(bytes $(( - $BUFFER )) -h ) ($(( - $BUFFER )) bytes) LARGER than the partition!" red
-        ui_msg "WARNING" "You need to fix this." red
-        ui_msg "WARNING" "Consider running 'diskutil resizePart $PARTITION max -f'"
-        return 1
-    elif [[ $BUFFER -gt $(( 1024 * 1024)) ]]; then  
-        echo "Filesystem is '$(bytes $BUFFER -h)' smaller than the partition."
+    # size may be indeterminate (e.g. f2fs that won't mount) -- only compare endpoints when BOTH values are numbers
+    if ! [[ $FS_SIZE =~ ^[0-9]+$ ]] || ! [[ $PART_SIZE =~ ^[0-9]+$ ]]; then
+        ui_msg "WARNING" "line $LINENO: could not determine filesystem size for '$FS_TYPE' (size probe failed) -- skipping endpoint comparison." white
+    else
+        local BUFFER=$(( PART_SIZE - FS_SIZE ))
+        
+        if [[ $BUFFER -lt 0 ]]; then
+            echo_debug $LINENO FS_SIZE="$FS_SIZE"  "$(bytes "$FS_SIZE" -h)"
+            echo_debug $LINENO PART_SIZE="$PART_SIZE"  "$(bytes "$PART_SIZE" -h)"
+            ui_msg "WARNING" "line $LINENO: Filesystem is $(bytes $(( - $BUFFER )) -h ) ($(( - $BUFFER )) bytes) LARGER than the partition!" red
+            ui_msg "WARNING" "You need to fix this." red
+            ui_msg "WARNING" "Consider running 'diskutil resizePart $PARTITION max -f'"
+            return 1
+        elif [[ $BUFFER -gt $(( 1024 * 1024)) ]]; then  
+            echo "Filesystem is '$(bytes $BUFFER -h)' smaller than the partition."
+        fi
     fi
     
     
