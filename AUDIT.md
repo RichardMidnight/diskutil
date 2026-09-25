@@ -76,7 +76,7 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 63 | `media_disk_verify` | 1924 | FIX | 1970 `(( ! $(ui_yesno …)))` was INVERTED (YES skipped, NO ran the verify loop) → un-negated (every other `!` site is a cancel-guard — correct); 1972 loop now mmcblk/nvme-safe; pt_type case + rc checks ✓; "initialied" typo noted |
 | 64 | `media_disk_repair` | 1978 | PASS | delegates to verify; `$YESNO` passed as arg re-parses harmlessly via getargs ("no changes made" matches its comment) |
 | 65 | `media_disk_initialize` | 1996 | PASS | initDisk review (410db81) |
-| 66 | `media_disk_addpartition` | 2059 | — | mostly (guard 410db81, geometry); reconfirm rest |
+| 66 | `media_disk_addpartition` | 2068 | FIX | fat16 `max` cap never applied (`END=100%` parsed as `100 % -BEG`→100, always < 4G) → `max` capped at BEG+4090M, numeric path is_number-guarded; dead `(( $VERBOSE ))` @2221/2262 (always false — `(( -v ))`=0) → `[[ $VERBOSE = -v ]]`. notes: 2120 BLOCK_SIZE lookup dead (1MiB GPT hardcode, intentional); `$NAME` arg unused (mkpart name=`$PART_TYPE`); 2123-26 LAST_PARTITION/PART_NUM/PARTITION vestigial (num re-derived from `parted -m print` ✓); `grep "$BEG"` could match end==new start (edge); 2258 + consumer 4455 DISK+num naming (4455 queued) |
 | 67 | `media_disk_delpartition` | 2261 | — | |
 | 68 | `media_disk_mount` | 2314 | — | |
 | 69 | `media_disk_unmount` | 2348 | — | |
@@ -141,3 +141,4 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 2026-9 | #53 media_filesystem_size | FIX | xfs restore inverted → `[[ -z $WAS_MOUNTED ]]`; `$currentsize`→`$blockcount` |
 | 2026-9 | #58/#59/#60 whole-disk branches | FIX | start was disk-size → `1`; end/size were `1` → disk size; #61 0-partition path now returns disk end. lint −1 (SC2005), ref→final19 |
 | 2026-9 | #61b/#63 test+verify loops | FIX | 1970 yesno gate un-inverted (YES=verify); mmcblk/nvme `p`-partition names in 1881/1972; #61b PARTCOUNT before prompt + "partitions" typo |
+| 2026-9 | #66 addpartition | FIX | fat16+max now capped at BEG+4090M (was unbounded → oversized fat16); 2221/2262 verbose prints were dead (`(( $VERBOSE ))` always false) → `[[ $VERBOSE = -v ]]`; SC2004 −1, ref→final20 |

@@ -2178,11 +2178,15 @@ media_disk_addpartition(){
     # limit fat16 to 4G
     if [[ $FORMAT = fat16 ]]; then
         echo_debug $LINENO Checking fat16 size...
-        if [[ $(( $END - $BEG )) -gt $(bytes 4090M -b) ]]; then
-            echo limiting fat16 partition to 4g
+        if [[ $SIZE = max ]]; then
             END=$(( $BEG + $(bytes 4090M -b) ))
+        elif [[ $(is_number "$END") = true ]]; then
+            if [[ $(( $END - $BEG )) -gt $(bytes 4090M -b) ]]; then
+                echo limiting fat16 partition to 4g
+                END=$(( $BEG + $(bytes 4090M -b) ))
+            fi
         fi
-    fi 
+    fi
  
 	# align END
     END=$(media_disk_align "$DEVICE" $END rounddown )
@@ -2218,7 +2222,7 @@ media_disk_addpartition(){
         END="$END"B
     fi
 
-    if (( $VERBOSE )); then
+    if [[ $VERBOSE = -v ]]; then
         #sudo fdisk -l $DEVICE   show in sectors
         sudo parted "$DEVICE" unit b print free
     fi
@@ -2259,7 +2263,7 @@ media_disk_addpartition(){
     fi
     
     
-    if (( $VERBOSE )); then
+    if [[ $VERBOSE = -v ]]; then
         #sudo fdisk -l $DEVICE
         sudo parted "$DEVICE" print free
     fi
