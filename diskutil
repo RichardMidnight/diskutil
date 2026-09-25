@@ -3728,7 +3728,7 @@ echo_debug $LINENO FS_NAME="$FS_NAME"
             #exfat)              run_command "sudo exfatlabel $PARTITION '$NAME'" $LINENO $VERBOSE;;
             exfat)              run_command "sudo tune.exfat -L '$NAME' '$PARTITION' " $LINENO "$VERBOSE";;
             ntfs)               run_command "sudo ntfslabel $VERBOSE '$PARTITION' '$NAME' " $LINENO "$VERBOSE";;
-            ext4)               run_command "sudo e2label '$PARTITION' '$NAME' " $LINENO "$VERBOSE"  ;;
+            ext2|ext3|ext4)     run_command "sudo e2label '$PARTITION' '$NAME' " $LINENO "$VERBOSE"  ;;
            # hrename, but I do not understand the syntax
             hfs+|hfsplus)       run_command "sudo hplabel '$PARTITION' '$NAME' " $LINENO "$VERBOSE"  ;;
             hfs)                run_command "sudo hlabel '$PARTITION' '$NAME' " $LINENO "$VERBOSE"  ;;
@@ -3737,6 +3737,11 @@ echo_debug $LINENO FS_NAME="$FS_NAME"
             btrfs)              run_command "sudo btrfs filesystem label '$PARTITION' '$NAME' " $LINENO "$VERBOSE";;
             *)                  echo "Unknown filesystem '$FS_TYPE'" ;;
         esac
+        rc=$?
+        if (( rc )); then
+            ui_msg_error $LINENO "Rename of '$PARTITION' to '$NAME' failed"
+            return 1
+        fi
     fi
     
     if (( $WAS_MOUNTED )); then
