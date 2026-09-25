@@ -990,7 +990,7 @@ media_device_partnum(){
   #  local PARTNUM=$(echo $1 | sed 's/.*[^1-9]\(.*\)$/\1/')
     local PARTNUM=$(echo "$1" | sed 's/.*[^0-9]\(.*\)$/\1/')
     
-    if ! [[ $(is_number "$PARTNUM") ]]; then
+    if ! is_number "$PARTNUM" >/dev/null; then
         echo_debug "$LINENO '$PARTNUM' not a number"
         return 1
     fi    

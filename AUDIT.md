@@ -34,15 +34,15 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 23 | `info_validate_num` | 646 | PASS | DEAD (no callers; only user of the ERRORS counter, which is otherwise unused). If ever enabled: MIN/MAX-violation paths log but don't return 1 (inconsistent with not-a-number path) — note for later |
 | 24 | `bytes` | 678 | FIX | TB→bytes multiplier was `*2014` (typo) → `*1024`: 1tb was 2162516033536 (1.9667×), now 1099511627776; kb/mb/gb untouched. (reconfirmed earlier PASS verdict — this line had been missed) |
 | 25 | `ui_countdown` | 769 | FIX | `local SECONDS` rebased shell $SECONDS (special var) → renamed local to CNT (no in-script consumer, but source-environment hazard). whiptail_countdown undefined = flagged, left (non-cli branch) |
-| 26 | `ui_echo` | 787 | — | |
-| 27 | `ui_log` | 808 | — | |
-| 28 | `ui_msg` | 825 | — | |
-| 29 | `ui_msg_error` | 847 | — | |
-| 30 | `ui_msg_warning` | 857 | — | |
+| 26 | `ui_echo` | 801 | PASS | MSG/COLOR global scratch = established sibling idiom (ui_msg/ui_msg_error/ui_yesno all set-then-read); LOGIT local; colors defined @50-53; stderr routing is by design (protects captured stdout) |
+| 27 | `ui_log` | 822 | PASS | `\n`→` - ` flatten fine; dir-mkdir runs even when LOG=off (harmless, pre-existing) |
+| 28 | `ui_msg` | 839 | PASS | cli path clean; whiptail branch dormant (whiptail_countdown class, flagged); "" 4th-arg only touches dormant whiptail path |
+| 29 | `ui_msg_error` | 861 | PASS | standard linewrap; do_beep_down already local-fixed (#16); logs with LINENO |
+| 30 | `ui_msg_warning` | 871 | PASS | double beep + nolog = by design |
 | 31 | `ui_yesno` | 868 | PASS | getargs/-y and TTY semantics verified |
-| 32 | `media_device_fullname` | 941 | — | |
-| 33 | `media_device_partname` | 959 | — | |
-| 34 | `media_device_partnum` | 971 | — | |
+| 32 | `media_device_fullname` | 941 | PASS | empty→rc1 ✓; /dev/ prefix test ✓ |
+| 33 | `media_device_partname` | 959 | PASS | DEAD (0 callers); quirk noted: whole-disk ARM name would yield `p0` — moot while unused |
+| 34 | `media_device_partnum` | 971 | FIX | guard `! [[ $(is_number ...) ]]` could never fire (non-empty-string test always true) → `! is_number "$PARTNUM" >/dev/null` (rc-based, no output execution, no new lint). sda/abc now rc1; sda10→10, mmcblk0p12→12 exact |
 | 35 | `media_device_size` | 988 | — | |
 | 36 | `media_device_type` | 997 | — | |
 | 37 | `media_device_name` | 1012 | — | |
@@ -131,3 +131,4 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 2026-9 | #23 info_validate_num | note | DEAD; if enabled, MIN/MAX path logs but lacks `return 1` |
 | 2026-9 | #24 bytes | FIX | TB→bytes `*2014`→`*1024` (1tb was 1.9667× too big) |
 | 2026-9 | #25 ui_countdown | FIX | `local SECONDS`→`CNT` (special-var rebase hazard) |
+| 2026-9 | #34 media_device_partnum | FIX | dead is_number guard → rc-based `is_number … >/dev/null` |
