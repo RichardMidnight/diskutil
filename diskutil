@@ -4444,8 +4444,16 @@ media_volume_badblocks(){
 	echo "on $PARTITION"
 	echo "size= $(bytes "$(media_device_size "$PARTITION")" -h) "
     
-    if (( $(ui_yesno "BAD BLOCKS" "Check $PARTITION for bad blocks " "$YESNO" ) )); then
-		media_volume_unmount "$PARTITION" "$YESNO" "$VERBOSE"
+    BB_MSG="Check $PARTITION for bad blocks"
+    if [[ -z $RW ]]; then
+        BB_MSG="$BB_MSG  (badblocks WRITE-VERIFY mode = DESTRUCTIVE;  use -n to test without writing)"
+    fi
+    if (( $(ui_yesno "BAD BLOCKS" "$BB_MSG" "$YESNO" ) )); then
+        if [[ $(media_device_type "$PARTITION") = "part" ]]; then
+            media_volume_unmount "$PARTITION" "$YESNO" "$VERBOSE"
+        else
+            media_disk_unmount "$PARTITION" -y "$VERBOSE" || return 1
+        fi
         run_command "sudo badblocks -s $VERBOSE $RW $PARTITION" $LINENO -y -v # -s:summary -n:nonDistructiveReadWrite
     fi
 }
