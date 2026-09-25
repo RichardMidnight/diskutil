@@ -56,8 +56,9 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 45 | `media_disk_listdisks` | 1167 | PASS | TYPE=disk filter correct |
 | 46 | `media_disk_align` | 1190 | PASS | `$(is_number …) = true` string idiom correct; 100% passthrough + clamp by design; roundup idiom correct |
 | 47 | `media_disk_first_available_byte` | 1227 | FIX | fresh-disk bogus `religned from  to 1048576` debug line (empty→0 arithmetic) → `-n` guard. Alignment math verified exact across boundaries |
-| 48 | `media_filesystem_ismounted` | 1281 | — | |
-| 49 | `media_filesystem_mountpoint` | 1304 | — | |
+| 48 | `media_filesystem_ismounted` | 1281 | FIX | contract `1`/empty works for 16/18 sites; **2 dead `= true` safety guards fixed with it**: 3524 (repair-on-mounted-fs guard, #81) + 4614 (resize dispatch mounted guard, #95+). root-branch rc quirk harmless (no caller reads rc) |
+| 49 | `media_filesystem_mountpoint` | 1304 | PASS | mount/detect/unmount cycle correct; `WAS_MOUNTED` arithmetic clean |
+| 49b | `media_filesystem_record` | 1323 | PASS | (queue-gap, like #10b). Global `$PARTITION` set by its single caller (4300) — works, sloppy idiom; mount/detect/unmount cycle correct; `local FS_RECORD=$(lsblk …)` baseline SC2155 |
 | 50 | `media_filesystem_min` | 1333 | — | mostly read (fat/exfat/ntfs); reconfirm rest |
 | 51 | `media_filesystem_name` | 1447 | — | |
 | 52 | `media_filesystem_size_alt` | 1474 | — | |
@@ -135,3 +136,4 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 2026-9 | #37 media_device_name | FIX | 10+ partition mangle (mmcblk0p10) → anchored trailing-digit strip |
 | 2026-9 | #42 media_disk_serial | FIX | `-o vendor,model,serial` → `-o serial` (bare serial) |
 | 2026-9 | #47 media_disk_first_available_byte | FIX | spurious fresh-disk `religned` debug line → `-n` guard |
+| 2026-9 | #48 ismounted call-sites | FIX | two dead `= true` mount-guards (3524 repair / 4614 resize) → `-n $(…)` |

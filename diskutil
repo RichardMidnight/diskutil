@@ -3521,7 +3521,7 @@ media_filesystem_repair() {
         media_volume_unmount "$PARTITION" -y "$VERBOSE"
   #  fi
     
-    if [[ $(media_filesystem_ismounted "$PARTITION") = true ]]; then
+    if [[ -n $(media_filesystem_ismounted "$PARTITION") ]]; then
         echo "$PARTITION" is mounted.  Cannot repair.
         return 1
     fi
@@ -4611,7 +4611,7 @@ media_volume_resize(){
 #echo_debug $LINENO new=$NEW_SIZE  $(( $NEW_SIZE / 1024 / 1024 )) M 
 
     # quit if still mounted
-    if [[ $(media_filesystem_ismounted "$PARTITION") = true ]]; then
+    if [[ -n $(media_filesystem_ismounted "$PARTITION") ]]; then
         echo "$PARTITION" is mounted. Cannot continue.
         return 1
     fi
