@@ -21,7 +21,7 @@
 
 SCRIPTNAME="${0##*/}"
 PRODUCTNAME=$SCRIPTNAME
-VER="0.1.79"  #2026-09-19
+VER="0.1.80"  #2026-09-24
 BACKTITLE="Disk Utility"
 
 ROOT_DEV=$(findmnt -no source /)
