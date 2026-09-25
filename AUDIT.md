@@ -112,8 +112,8 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 97 | `menu` | 4917 | FIX | live (dispatch `menu)`) legacy pisafe shell: 8 callees undefined (config_var_get_settings, do_list_info, menu_settings, menu_tools, media_backup, media_restore, pisafe_help, pisafe_about; each = "command not found"); INFO/MOUNT/UNMOUNT/FirstAid/Format items fell to `*) return` = silent menu exit. Replaced body with honest refusal + verified CLI equivalents (list/info/mount/umount/verifyFS/repair/help). Removed the menu-only `WT_MENU_HEIGHT` set-line my change orphaned (would have been a NEW SC2034); `WT_MENU_HEIGHT_TALL` (untouched, still flagged) kept per baseline. stub-tested rc1. LINT: deltas all decreases |
 | 98 | `diskutil_install` | 4919 | FIX | cp/chmod rc unchecked → "Installed ver=" (false success) even on failed copy → `|| { do_beep_down; return 1; }` on both. stub-tested (cp-fail→rc1 no success line; ok→rc0+line) |
 | 99 | `diskutil_update` | 4957 | FIX | `sudo mv` rc unchecked → printed "installed. Press any key…" + `exit 0` on failed move, tmp left behind → `|| { rm -f .tmp; do_beep_down; return 1; }`. rest reconfirmed: wget-rc ✓, -f gate ✓, get_ver_to_int sane (garbage→0→"up to date" harmless), yesno gate ✓. notes: runs downloaded script with `-v` (design); INTERFACE=${1:-cli} only ever called bare from `-u` flag. stub-tested mv-fail→rc1+tmp-cleaned |
-| 100 | `diskutil_terminology` | 5015 | — | |
-| 101 | `diskutil_help` | 5035 | — | |
+| 100 | `diskutil_terminology` | 5006 | PASS | pure text; notes: most terms listed without definitions (cosmetic content gap, pre-existing) |
+| 101 | `diskutil_help` | 5026 | FIX | text-only fn; 3 doc defects fixed: removed advertised verb `recoverPartitionTable` (NO dispatch arm — running it silently fell to default arm = help + disk list, no error); `wipe` → `wipePartition\|wipeDisk` (real arms); "Most destructive operations are not prompted" → corrected (they ARE prompted unless -y; this tool ≠ Apple's diskutil). Render output verified (grep of both modes); LINT deltas all decreases |
 
 ## Log
 
@@ -166,3 +166,5 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 2026-9 | #97 menu | FIX | legacy pisafe shell: 8 undefined callees (each click = command-not-found); 5 items (INFO/MOUNT/UNMOUNT/FirstAid/Format) fell to `*) return` = silent exit → honest refusal + CLI equivalents; orphaned WT_MENU_HEIGHT set-line removed (prevented NEW SC2034); stub-tested; LINT deltas all decreases |
 | 2026-9 | #98 diskutil_install | FIX | cp/chmod rc unchecked → false "Installed ver=" success → `|| { do_beep_down; return 1; }`; stub-tested |
 | 2026-9 | #99 diskutil_update | FIX | mv rc unchecked → false "installed…exit 0" + tmp left behind → `|| { rm -f .tmp; do_beep_down; return 1; }`; rest of fn reconfirmed ok; stub-tested |
+| 2026-9 | #100 terminology | PASS | pure text; content gaps noted |
+| 2026-9 | #101 help | FIX | removed phantom verb recoverPartitionTable (no arm; silent help-fallback); wipe → wipePartition\|wipeDisk; corrected false "not prompted" warning; render verified |

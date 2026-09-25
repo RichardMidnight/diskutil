@@ -5034,9 +5034,9 @@ echo "Disk Utility Tool  ver $VER"
 echo "Utility to manage local disks and physical volumes. Inspired by Apple's diskutil
 A physical volume refers to a drive or partition plus it's filesystem.
 Most commands DO NOT require an administrator or root user
-WARNING: Most destructive operations are not prompted
+WARNING: Most destructive operations ARE prompted for confirmation (pass -y to skip prompts)
 
-This simplifies the use of: mkfs, ckfs, mount, unmount, eject, resize , etc.
+Common operations: mkfs, ckfs, mount, unmount, eject, resize, etc.
 
 Usage:  diskutil [quiet] <verb> <options> [-y] [-v], where <verb> is as follows:
 
@@ -5073,8 +5073,7 @@ Usage:  diskutil [quiet] <verb> <options> [-y] [-v], where <verb> is as follows:
 
      initDisk           (initilize a disk with a new partition table, removing all data)
      addVolume          (Create a new partition to occupy free space)
-     delVolume          (Delete a partition)
-     recoverPartitionTable (parted rescue mode)"
+     delVolume          (Delete a partition)"
      
      
 if [[ -n $VERBOSE ]]; then
@@ -5083,7 +5082,7 @@ echo "
 
      resizePart         (Resizes just the Partition)
      resizeFS           (Resizes just the Filesystem)
-     wipe               (wipe entire partition with zero|random|shred)
+     wipePartition|wipeDisk  (wipe a partition or disk with zero|random|shred)
      badBlocks          (check Partition or Disk for bad blocks)
      hexedit            (view/edit Partition or Disk)
 "
