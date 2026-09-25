@@ -105,8 +105,8 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 90 | `media_volume_add` | 4462 | FIX | **raw-name concat class (5th live site)**: `local PARTITION=$DEVICE$NEW_PARTITION_NUM` = `/dev/mmcblk01` (invalid) on SD, `/dev/nvme0n11` on NVMe → `media_partition_format` checktarget failed (node missing) → partition created but NEVER formatted. Added p-name idiom `[[ *mmcblk*\|*nvme* ]] && PARTITION=$DEVICE"p$NUM"` (2510/1881 pattern) — name-build verified sda/mmcblk/nvme. other sites 1240/1242 (first_avail_byte) + 2124/2126 (initialize) are UNUSED locals (dead, left). notes: `LAST_PART` unused (not shellcheck-flagged; left); format called with hard-coded `-y` (addPartition already prompted) |
 | 91 | `media_volume_resize` | 4490 | PASS | audited in resize pass |
 | 92 | `getargs` | 4671 | PASS | YESNO/-y/TTY semantics verified |
-| 93 | `media_volume_verify` | 4696 | — | |
-| 94 | `media_volume_repair` | 4773 | — | |
+| 93 | `media_volume_verify` | 4749 | PASS | 3-step verify (disk_verify rc ✓, part -e check ✓, filesystem_check rc ✓ — #80-fixed fn); names come from user arg (no disk+num concat); yesno/rc chain clean. notes: commented-out PT-type/partcount blocks (dead, left) |
+| 94 | `media_volume_repair` | 4826 | PASS | thin wrapper: usage ✓, checktarget part ✓, delegates to #81-fixed media_filesystem_repair with rc ✓. notes: `media_device_fullname` called before usage guard (quiet debug echo only, harmless); FS_TYPE auto-detected in callee ✓ |
 | 95 | `media_clone` | 4813 | — | |
 | 96 | `whiptail_calc_wt_size` | 4870 | — | |
 | 97 | `menu` | 4899 | — | FLAGGED: "Change settings" (4928) calls `menu_settings` which is NOT defined |
@@ -159,3 +159,5 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 2026-9 | #88 filesystem_info | PASS | live via `info*`; mount/restore traced correct; tail runs media_filesystem_check by design. notes: `local diff` = SC2034 baseline (leave) |
 | 2026-9 | #89 badblocks | FIX | disk-target unmount was ineffective (umount on disk name) while badblocks defaults to destructive write-verify → part→volume_unmount / disk→media_disk_unmount (\|\| return 1); explicit DESTRUCTIVE warning when -n absent; stub-tested 4/4; LINT flat vs final23 |
 | 2026-9 | #90 volume_add | FIX | 5th live raw-name concat site: addVolume built `/dev/mmcblk01`/`nvme0n11` → format never ran (partition created unformatted) → p-name idiom (sda/mmcblk/nvme verified); other concat sites 1240/2124 are unused locals (left); LINT flat vs final23 |
+| 2026-9 | #93 volume_verify | PASS | 3-step (disk rc ✓, part -e ✓, fs_check rc ✓ = #80-fixed); names from user arg (no concat) |
+| 2026-9 | #94 volume_repair | PASS | thin wrapper → #81-fixed media_filesystem_repair with rc ✓ |
