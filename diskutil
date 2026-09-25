@@ -4945,8 +4945,8 @@ diskutil_install(){
     if (( $(ui_yesno "INSTALL" "Install diskutil" "$YESNO") )); then
     
         # Install the CLI script
-        sudo cp --backup=numbered "$SCRIPTNAME" /usr/local/bin/"$SCRIPTNAME"
-        sudo chmod +x /usr/local/bin/"$SCRIPTNAME"
+        sudo cp --backup=numbered "$SCRIPTNAME" /usr/local/bin/"$SCRIPTNAME" || { do_beep_down; return 1; }
+        sudo chmod +x /usr/local/bin/"$SCRIPTNAME" || { do_beep_down; return 1; }
         echo Installed ver="$(/usr/local/bin/"$SCRIPTNAME" -v)"
     
     fi
@@ -4987,7 +4987,7 @@ diskutil_update() {
      #       sudo mv $SCRIPTNAME.tmp /usr/local/bin/$SCRIPTNAME
      #       sudo chmod +x /usr/local/bin/$SCRIPTNAME
      
-            sudo mv "$SCRIPTNAME".tmp "$SCRIPTNAME"
+            sudo mv "$SCRIPTNAME".tmp "$SCRIPTNAME" || { rm -f "$SCRIPTNAME".tmp; do_beep_down; return 1; }
             echo "$($SCRIPTNAME -v) installed. Press any key to exit... "
             read -s -n 1
             echo

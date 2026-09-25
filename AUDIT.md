@@ -110,8 +110,8 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 95 | `media_clone` | 4866 | FIX | live but fully broken: dd/pv lines COMMENTED OUT; `media_size`/`BS`/`INDEV` undefined; TARGET unused → `diskutil clone SRC DST` printed garbage sizes + "command not found" noise and **exited 0 without copying anything**. Replaced body with honest refusal: usage guard, explicit "not implemented yet - nothing was copied" + `sudo dd if= of= bs=4M conv=fsync` hint, `do_beep_down`, return 1. stub-tested (no-args / with-args → rc1 + text). LINT improved (−8 SC2004, −3 SC2034, SC2319/2320 down) |
 | 96 | `whiptail_calc_wt_size` | 4870 | — | |
 | 97 | `menu` | 4917 | FIX | live (dispatch `menu)`) legacy pisafe shell: 8 callees undefined (config_var_get_settings, do_list_info, menu_settings, menu_tools, media_backup, media_restore, pisafe_help, pisafe_about; each = "command not found"); INFO/MOUNT/UNMOUNT/FirstAid/Format items fell to `*) return` = silent menu exit. Replaced body with honest refusal + verified CLI equivalents (list/info/mount/umount/verifyFS/repair/help). Removed the menu-only `WT_MENU_HEIGHT` set-line my change orphaned (would have been a NEW SC2034); `WT_MENU_HEIGHT_TALL` (untouched, still flagged) kept per baseline. stub-tested rc1. LINT: deltas all decreases |
-| 98 | `diskutil_install` | 4947 | — | |
-| 99 | `diskutil_update` | 4966 | — | dead-local-YES fixed (ac8f5e1); rest reconfirm |
+| 98 | `diskutil_install` | 4919 | FIX | cp/chmod rc unchecked → "Installed ver=" (false success) even on failed copy → `|| { do_beep_down; return 1; }` on both. stub-tested (cp-fail→rc1 no success line; ok→rc0+line) |
+| 99 | `diskutil_update` | 4957 | FIX | `sudo mv` rc unchecked → printed "installed. Press any key…" + `exit 0` on failed move, tmp left behind → `|| { rm -f .tmp; do_beep_down; return 1; }`. rest reconfirmed: wget-rc ✓, -f gate ✓, get_ver_to_int sane (garbage→0→"up to date" harmless), yesno gate ✓. notes: runs downloaded script with `-v` (design); INTERFACE=${1:-cli} only ever called bare from `-u` flag. stub-tested mv-fail→rc1+tmp-cleaned |
 | 100 | `diskutil_terminology` | 5015 | — | |
 | 101 | `diskutil_help` | 5035 | — | |
 
@@ -164,3 +164,5 @@ fix accepted+committed · `REJ` = reviewed, change rejected · `—` = not yet r
 | 2026-9 | #95 media_clone | FIX | body was fully broken (dd/pv commented out; media_size/BS/INDEV undefined; TARGET unused) → printed garbage and exited 0 without copying anything → replaced with honest refusal + dd hint, return 1; stub-tested; LINT deltas all decreases |
 | 2026-9 | #96 whiptail_calc_wt_size | PASS | size clamps ok (120 cap, 60/178 floor-ceil); non-tty tput-fail → 0 (pre-existing, harmless) |
 | 2026-9 | #97 menu | FIX | legacy pisafe shell: 8 undefined callees (each click = command-not-found); 5 items (INFO/MOUNT/UNMOUNT/FirstAid/Format) fell to `*) return` = silent exit → honest refusal + CLI equivalents; orphaned WT_MENU_HEIGHT set-line removed (prevented NEW SC2034); stub-tested; LINT deltas all decreases |
+| 2026-9 | #98 diskutil_install | FIX | cp/chmod rc unchecked → false "Installed ver=" success → `|| { do_beep_down; return 1; }`; stub-tested |
+| 2026-9 | #99 diskutil_update | FIX | mv rc unchecked → false "installed…exit 0" + tmp left behind → `|| { rm -f .tmp; do_beep_down; return 1; }`; rest of fn reconfirmed ok; stub-tested |
